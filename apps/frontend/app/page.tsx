@@ -2,7 +2,6 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
-  Activity,
   ArchiveRestore,
   ArrowLeft,
   Bell,
@@ -15,7 +14,6 @@ import {
   FolderPlus,
   FolderTree,
   Gauge,
-  Heart,
   History,
   KeyRound,
   LockKeyhole,
@@ -308,6 +306,12 @@ type AuditFilters = {
   q: string;
   action: string;
   success: string;
+};
+
+type RepositoryFilters = {
+  classification: string;
+  scanStatus: string;
+  extension: string;
 };
 
 type SmtpSettings = {
@@ -792,7 +796,12 @@ export default function Home() {
     activeToken: string,
     query = searchQuery,
     folderId = activeFolderId,
-    filters: AuditFilters = { q: auditQuery, action: auditAction, success: auditSuccess }
+    filters: AuditFilters = { q: auditQuery, action: auditAction, success: auditSuccess },
+    repositoryFilters: RepositoryFilters = {
+      classification: searchClassification,
+      scanStatus: searchScanStatus,
+      extension: searchExtension
+    }
   ) {
     setLoading(true);
     setError(null);
@@ -802,14 +811,14 @@ export default function Home() {
       if (query.trim()) {
         fileParams.set("q", query.trim());
       }
-      if (searchClassification) {
-        fileParams.set("classification", searchClassification);
+      if (repositoryFilters.classification) {
+        fileParams.set("classification", repositoryFilters.classification);
       }
-      if (searchScanStatus) {
-        fileParams.set("scanStatus", searchScanStatus);
+      if (repositoryFilters.scanStatus) {
+        fileParams.set("scanStatus", repositoryFilters.scanStatus);
       }
-      if (searchExtension.trim()) {
-        fileParams.set("extension", searchExtension.trim());
+      if (repositoryFilters.extension.trim()) {
+        fileParams.set("extension", repositoryFilters.extension.trim());
       }
 
       const dashboardRequest = apiRequest<Dashboard>("/admin/dashboard", activeToken).catch((caught) => {
@@ -953,11 +962,30 @@ export default function Home() {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const query = String(formData.get("repositorySearch") ?? "");
+    const repositoryFilters = {
+      classification: searchClassification,
+      scanStatus: searchScanStatus,
+      extension: searchExtension
+    };
+
     setSearchQuery(query);
     activateModule("repository");
 
     if (token) {
-      void loadDashboard(token, query);
+      void loadDashboard(token, query, activeFolderId, undefined, repositoryFilters);
+    }
+  }
+
+  function handleRepositoryClear() {
+    const emptyRepositoryFilters = { classification: "", scanStatus: "", extension: "" };
+
+    setSearchQuery("");
+    setSearchClassification("");
+    setSearchScanStatus("");
+    setSearchExtension("");
+
+    if (token) {
+      void loadDashboard(token, "", activeFolderId, undefined, emptyRepositoryFilters);
     }
   }
 
@@ -1894,191 +1922,210 @@ export default function Home() {
           ) : null}
 
           {activeModule === "repository" ? (
-          <section className="two-column">
-            <article className="panel large-panel">
-              <div className="panel-header">
-                <div>
-                  <h2>Repository Workspace</h2>
-                  <p>{data?.folder?.folder.pathCache ?? "No folder selected"}</p>
-                </div>
-                <div className="panel-actions">
-                  <button
-                    className="text-button"
-                    type="button"
-                    disabled={!data?.folder?.folder.parentId}
-                    onClick={() => void handleOpenFolder(data?.folder?.folder.parentId ?? null)}
-                  >
-                    <ArrowLeft aria-hidden="true" size={15} />
-                    Up
-                  </button>
-                  <button className="text-button" type="button" onClick={openCreateFolder}>
-                    <FolderPlus aria-hidden="true" size={15} />
-                    New Folder
-                  </button>
-                  {data?.folder?.folder ? (
-                    <button className="text-button" type="button" onClick={() => openEditFolder(data.folder!.folder)}>
-                      <Pencil aria-hidden="true" size={15} />
-                      Rename
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="breadcrumb-list" aria-label="Folder breadcrumbs">
-                {(data?.folder?.breadcrumbs ?? []).map((crumb) => (
-                  <button type="button" key={crumb.id} onClick={() => void handleOpenFolder(crumb.id)}>
-                    {crumb.name}
-                  </button>
-                ))}
-              </div>
-
-              <form className="module-filter-bar" onSubmit={handleSearch}>
-                <label>
-                  <span>Search</span>
-                  <input
-                    name="repositorySearch"
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder="Name, extension, description"
-                  />
-                </label>
-                <label>
-                  <span>Classification</span>
-                  <select value={searchClassification} onChange={(event) => setSearchClassification(event.target.value)}>
-                    <option value="">All</option>
-                    <option value="PUBLIC_INTERNAL">Public Internal</option>
-                    <option value="INTERNAL">Internal</option>
-                    <option value="CONFIDENTIAL">Confidential</option>
-                    <option value="RESTRICTED">Restricted</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Scan</span>
-                  <select value={searchScanStatus} onChange={(event) => setSearchScanStatus(event.target.value)}>
-                    <option value="">All</option>
-                    <option value="PENDING">Pending</option>
-                    <option value="SCANNING">Scanning</option>
-                    <option value="CLEAN">Clean</option>
-                    <option value="INFECTED">Infected</option>
-                    <option value="FAILED">Failed</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Ext</span>
-                  <input value={searchExtension} onChange={(event) => setSearchExtension(event.target.value)} placeholder="pdf" />
-                </label>
-                <button className="primary-button" type="submit">
-                  <Search aria-hidden="true" size={16} />
-                  Apply
-                </button>
-              </form>
-
-              <div className="toolbar">
-                <button type="button">{data?.roots?.length ?? 0} root folders</button>
-                <button type="button">{data?.folder?.children?.length ?? 0} child folders</button>
-                <button type="button">{data?.files?.length ?? 0} {searchQuery.trim() ? "matching" : "folder"} files</button>
-                <button type="button">{data?.dashboard.smtpStatus ?? "smtp"} SMTP</button>
-              </div>
-
-              <div className="folder-grid" aria-label="Child folders">
-                {(data?.folder?.children ?? []).map((folder) => (
-                  <article className="folder-card" key={folder.id}>
-                    <button type="button" onClick={() => void handleOpenFolder(folder.id)}>
-                      <FolderTree aria-hidden="true" size={18} />
-                      <span>
-                        <strong>{folder.name}</strong>
-                        <small>{folder.childFolderCount} folders · {folder.fileCount} files</small>
-                      </span>
-                    </button>
-                    <button className="row-icon-button" type="button" title={`Rename ${folder.name}`} onClick={() => openEditFolder(folder)}>
-                      <Pencil aria-hidden="true" size={14} />
-                    </button>
-                  </article>
-                ))}
-              </div>
-
-              <div className="data-table" role="table" aria-label="Repository files">
-                <div className="table-row table-head" role="row">
-                  <span role="columnheader">Name</span>
-                  <span role="columnheader">Owner</span>
-                  <span role="columnheader">Class</span>
-                  <span role="columnheader">Status</span>
-                  <span role="columnheader">Updated</span>
-                  <span role="columnheader">Action</span>
-                </div>
-                {(data?.files ?? []).map((file) => (
-                  <div className="table-row" role="row" key={file.id}>
-                    <span role="cell" className="file-name">
-                      <FileText aria-hidden="true" size={16} />
-                      {file.originalName}
-                    </span>
-                    <span role="cell">{file.createdBy?.fullName ?? file.department?.name ?? "System"}</span>
-                    <span role="cell">
-                      <span className={`badge ${file.classification.toLowerCase()}`}>{titleCase(file.classification)}</span>
-                    </span>
-                    <span role="cell">
-                      <span className={`status ${file.currentVersion?.scanStatus.toLowerCase() ?? "pending"}`}>
-                        {titleCase(file.currentVersion?.scanStatus ?? "PENDING")}
-                      </span>
-                    </span>
-                    <span role="cell">{formatDate(file.updatedAt)}</span>
-                    <span role="cell" className="table-actions">
-                      <button
-                        className="row-icon-button"
-                        type="button"
-                        title={`Open ${file.originalName}`}
-                        onClick={() => void handleOpenFile(file)}
-                      >
-                        <FileText aria-hidden="true" size={15} />
-                      </button>
-                      <button
-                        className="row-icon-button"
-                        type="button"
-                        title={`Preview ${file.originalName}`}
-                        disabled={file.currentVersion?.scanStatus !== "CLEAN"}
-                        onClick={() => void handlePreviewFile(file)}
-                      >
-                        <Search aria-hidden="true" size={15} />
-                      </button>
-                      <button
-                        className="row-icon-button"
-                        type="button"
-                        title={`Download ${file.originalName}`}
-                        disabled={file.currentVersion?.scanStatus !== "CLEAN" || downloadingFileId === file.id}
-                        onClick={() => void handleDownload(file)}
-                      >
-                        <Download aria-hidden="true" size={15} />
-                      </button>
-                      <button
-                        className="row-icon-button danger"
-                        type="button"
-                        title={`Delete ${file.originalName}`}
-                        onClick={() => void handleDeleteFile(file)}
-                      >
-                        <XCircle aria-hidden="true" size={15} />
-                      </button>
-                    </span>
+            <section className="repository-module">
+              <article className="panel repository-panel">
+                <div className="repository-workbench">
+                  <div className="repository-location">
+                    <span className="eyebrow">Current Location</span>
+                    <h2>{data?.folder?.folder.name ?? "Repository Root"}</h2>
+                    <p>{data?.folder?.folder.pathCache ?? "Choose a root folder to begin"}</p>
                   </div>
-                ))}
-                {data && data.files.length === 0 ? <p className="empty-state">No files match the current search.</p> : null}
-              </div>
-            </article>
-
-            <aside className="panel">
-              <div className="panel-header">
-                <div>
-                  <h2>Quick Access</h2>
-                  <p>Daily user shortcuts</p>
+                  <div className="repository-actions">
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={!data?.folder?.folder.parentId}
+                      onClick={() => void handleOpenFolder(data?.folder?.folder.parentId ?? null)}
+                    >
+                      <ArrowLeft aria-hidden="true" size={16} />
+                      Up
+                    </button>
+                    <button className="secondary-button" type="button" onClick={openCreateFolder}>
+                      <FolderPlus aria-hidden="true" size={16} />
+                      New Folder
+                    </button>
+                    {data?.folder?.folder ? (
+                      <button className="secondary-button" type="button" onClick={() => openEditFolder(data.folder!.folder)}>
+                        <Pencil aria-hidden="true" size={16} />
+                        Rename
+                      </button>
+                    ) : null}
+                    <button className="primary-button" type="button" onClick={() => setUploadOpen(true)}>
+                      <Upload aria-hidden="true" size={16} />
+                      Upload File
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div className="shortcut-grid">
-                <button type="button"><Heart size={17} /> Favorites</button>
-                <button type="button"><Activity size={17} /> Recent</button>
-                <button type="button" onClick={() => setAccessModalOpen(true)}><KeyRound size={17} /> Access Requests</button>
-                <button type="button"><ShieldCheck size={17} /> My Permissions</button>
-              </div>
-            </aside>
-          </section>
+
+                <div className="breadcrumb-list repository-breadcrumbs" aria-label="Folder breadcrumbs">
+                  {(data?.folder?.breadcrumbs ?? []).map((crumb) => (
+                    <button type="button" key={crumb.id} onClick={() => void handleOpenFolder(crumb.id)}>
+                      {crumb.name}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="repository-stats" aria-label="Repository summary">
+                  <span><strong>{data?.roots?.length ?? 0}</strong> root folders</span>
+                  <span><strong>{data?.folder?.children?.length ?? 0}</strong> child folders</span>
+                  <span><strong>{data?.files?.length ?? 0}</strong> {searchQuery.trim() ? "matching files" : "folder files"}</span>
+                  <span><strong>{titleCase(data?.dashboard.smtpStatus ?? "smtp")}</strong> SMTP</span>
+                </div>
+
+                <form className="module-filter-bar repository-filter-bar" onSubmit={handleSearch}>
+                  <label className="repository-search-field">
+                    <span>Find files</span>
+                    <input
+                      name="repositorySearch"
+                      value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)}
+                      placeholder="Search name, extension, or description"
+                    />
+                  </label>
+                  <label>
+                    <span>Classification</span>
+                    <select value={searchClassification} onChange={(event) => setSearchClassification(event.target.value)}>
+                      <option value="">All</option>
+                      <option value="PUBLIC_INTERNAL">Public Internal</option>
+                      <option value="INTERNAL">Internal</option>
+                      <option value="CONFIDENTIAL">Confidential</option>
+                      <option value="RESTRICTED">Restricted</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Scan status</span>
+                    <select value={searchScanStatus} onChange={(event) => setSearchScanStatus(event.target.value)}>
+                      <option value="">All</option>
+                      <option value="PENDING">Pending</option>
+                      <option value="SCANNING">Scanning</option>
+                      <option value="CLEAN">Clean</option>
+                      <option value="INFECTED">Infected</option>
+                      <option value="FAILED">Failed</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Extension</span>
+                    <input value={searchExtension} onChange={(event) => setSearchExtension(event.target.value)} placeholder="pdf" />
+                  </label>
+                  <div className="repository-filter-actions">
+                    <button className="secondary-button" type="button" onClick={handleRepositoryClear}>
+                      <XCircle aria-hidden="true" size={16} />
+                      Clear
+                    </button>
+                    <button className="primary-button" type="submit">
+                      <Search aria-hidden="true" size={16} />
+                      Apply
+                    </button>
+                  </div>
+                </form>
+
+                <div className="repository-section-heading">
+                  <div>
+                    <h3>Folders</h3>
+                    <p>{data?.folder?.children?.length ?? 0} available in this location</p>
+                  </div>
+                  <button className="row-text-button" type="button" onClick={() => activateModule("recycle")}>
+                    <ArchiveRestore aria-hidden="true" size={15} />
+                    Recycle Bin
+                  </button>
+                </div>
+
+                <div className="folder-grid repository-folder-grid" aria-label="Child folders">
+                  {(data?.folder?.children ?? []).map((folder) => (
+                    <article className="folder-card" key={folder.id}>
+                      <button type="button" onClick={() => void handleOpenFolder(folder.id)}>
+                        <FolderTree aria-hidden="true" size={20} />
+                        <span>
+                          <strong>{folder.name}</strong>
+                          <small>{folder.childFolderCount} folders · {folder.fileCount} files</small>
+                        </span>
+                      </button>
+                      <button className="row-icon-button" type="button" title={`Rename ${folder.name}`} onClick={() => openEditFolder(folder)}>
+                        <Pencil aria-hidden="true" size={14} />
+                      </button>
+                    </article>
+                  ))}
+                  {data && data.folder && data.folder.children.length === 0 ? <p className="empty-state">No child folders in this location.</p> : null}
+                </div>
+
+                <div className="repository-section-heading">
+                  <div>
+                    <h3>Files</h3>
+                    <p>{searchQuery.trim() ? "Filtered repository results" : "Documents stored in the selected folder"}</p>
+                  </div>
+                  <button className="row-text-button" type="button" onClick={() => setAccessModalOpen(true)}>
+                    <KeyRound aria-hidden="true" size={15} />
+                    Request Access
+                  </button>
+                </div>
+
+                <div className="data-table repository-file-table" role="table" aria-label="Repository files">
+                  <div className="table-row table-head" role="row">
+                    <span role="columnheader">Name</span>
+                    <span role="columnheader">Owner</span>
+                    <span role="columnheader">Class</span>
+                    <span role="columnheader">Scan</span>
+                    <span role="columnheader">Updated</span>
+                    <span role="columnheader">Actions</span>
+                  </div>
+                  {(data?.files ?? []).map((file) => (
+                    <div className="table-row" role="row" key={file.id}>
+                      <span role="cell" className="file-name">
+                        <FileText aria-hidden="true" size={16} />
+                        {file.originalName}
+                      </span>
+                      <span role="cell">{file.createdBy?.fullName ?? file.department?.name ?? "System"}</span>
+                      <span role="cell">
+                        <span className={`badge ${file.classification.toLowerCase()}`}>{titleCase(file.classification)}</span>
+                      </span>
+                      <span role="cell">
+                        <span className={`status ${file.currentVersion?.scanStatus.toLowerCase() ?? "pending"}`}>
+                          {titleCase(file.currentVersion?.scanStatus ?? "PENDING")}
+                        </span>
+                      </span>
+                      <span role="cell">{formatDate(file.updatedAt)}</span>
+                      <span role="cell" className="table-actions">
+                        <button
+                          className="row-icon-button"
+                          type="button"
+                          title={`Open ${file.originalName}`}
+                          onClick={() => void handleOpenFile(file)}
+                        >
+                          <FileText aria-hidden="true" size={15} />
+                        </button>
+                        <button
+                          className="row-icon-button"
+                          type="button"
+                          title={`Preview ${file.originalName}`}
+                          disabled={file.currentVersion?.scanStatus !== "CLEAN"}
+                          onClick={() => void handlePreviewFile(file)}
+                        >
+                          <Search aria-hidden="true" size={15} />
+                        </button>
+                        <button
+                          className="row-icon-button"
+                          type="button"
+                          title={`Download ${file.originalName}`}
+                          disabled={file.currentVersion?.scanStatus !== "CLEAN" || downloadingFileId === file.id}
+                          onClick={() => void handleDownload(file)}
+                        >
+                          <Download aria-hidden="true" size={15} />
+                        </button>
+                        <button
+                          className="row-icon-button danger"
+                          type="button"
+                          title={`Delete ${file.originalName}`}
+                          onClick={() => void handleDeleteFile(file)}
+                        >
+                          <XCircle aria-hidden="true" size={15} />
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                  {data && data.files.length === 0 ? <p className="empty-state">No files match the current repository view.</p> : null}
+                </div>
+              </article>
+            </section>
           ) : null}
 
           {activeModule === "recycle" && moduleAccess.recycle ? (
