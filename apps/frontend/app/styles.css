@@ -112,6 +112,27 @@ textarea:focus-visible {
   background: #fbfcfd;
 }
 
+.test-login-note {
+  display: grid;
+  gap: 5px;
+  border: 1px dashed rgba(242, 101, 34, 0.42);
+  border-radius: var(--radius);
+  background: #fff8f3;
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.test-login-note strong,
+.test-login-note span {
+  display: block;
+}
+
+.test-login-note strong {
+  color: var(--primary-strong);
+  font-size: 13px;
+}
+
 .app-shell {
   display: block;
   min-height: 100vh;

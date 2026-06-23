@@ -417,6 +417,9 @@ type EmailTemplate = {
 };
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+const showTestCredentials = process.env.NEXT_PUBLIC_SHOW_TEST_CREDENTIALS === "true";
+const testLoginEmail = process.env.NEXT_PUBLIC_TEST_LOGIN_EMAIL ?? "admin@company.com";
+const testLoginPassword = process.env.NEXT_PUBLIC_TEST_LOGIN_PASSWORD ?? "1234567890";
 
 const supportedUploadExtensions = [
   "pdf",
@@ -2297,6 +2300,13 @@ export default function Home() {
               <span>Password</span>
               <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" />
             </label>
+            {showTestCredentials ? (
+              <div className="test-login-note" aria-label="Temporary test login credentials">
+                <strong>Test login</strong>
+                <span>Email: {testLoginEmail}</span>
+                <span>Password: {testLoginPassword}</span>
+              </div>
+            ) : null}
             {error ? <p className="error-text">{error}</p> : null}
             <button className="primary-button" type="submit" disabled={authLoading}>
               <ShieldCheck aria-hidden="true" size={17} />
