@@ -8,6 +8,7 @@ import {
   Building2,
   ChartNoAxesCombined,
   Database,
+  Download,
   FileText,
   FolderTree,
   Gauge,
@@ -247,6 +248,7 @@ export default function Home() {
   const [uploadDescription, setUploadDescription] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -417,6 +419,48 @@ export default function Home() {
     }
   }
 
+  async function handleDownload(file: RepositoryFile) {
+    if (!token) {
+      setError("Please sign in before downloading.");
+      return;
+    }
+
+    if (file.currentVersion?.scanStatus !== "CLEAN") {
+      setError("This file is not available until antivirus scanning marks it clean.");
+      return;
+    }
+
+    setDownloadingFileId(file.id);
+    setError(null);
+
+    try {
+      const response = await fetch(`${apiBase}/files/${file.id}/download`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Download failed: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.originalName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Download failed");
+    } finally {
+      setDownloadingFileId(null);
+    }
+  }
+
   if (!token || !user) {
     return (
       <main className="login-shell">
@@ -565,6 +609,7 @@ export default function Home() {
                   <span role="columnheader">Class</span>
                   <span role="columnheader">Status</span>
                   <span role="columnheader">Updated</span>
+                  <span role="columnheader">Action</span>
                 </div>
                 {(data?.files ?? []).map((file) => (
                   <div className="table-row" role="row" key={file.id}>
@@ -582,6 +627,17 @@ export default function Home() {
                       </span>
                     </span>
                     <span role="cell">{formatDate(file.updatedAt)}</span>
+                    <span role="cell">
+                      <button
+                        className="row-icon-button"
+                        type="button"
+                        title={`Download ${file.originalName}`}
+                        disabled={file.currentVersion?.scanStatus !== "CLEAN" || downloadingFileId === file.id}
+                        onClick={() => void handleDownload(file)}
+                      >
+                        <Download aria-hidden="true" size={15} />
+                      </button>
+                    </span>
                   </div>
                 ))}
                 {data && data.files.length === 0 ? <p className="empty-state">No files match the current search.</p> : null}

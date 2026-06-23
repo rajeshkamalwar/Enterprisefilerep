@@ -425,7 +425,7 @@ h1 {
 
 .table-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 0.85fr 0.85fr 0.7fr;
+  grid-template-columns: 2fr 1fr 0.85fr 0.85fr 0.7fr 54px;
   gap: 10px;
   align-items: center;
   min-height: 50px;
@@ -500,6 +500,23 @@ h1 {
 .status.infected {
   color: var(--danger);
   background: #fff1f0;
+}
+
+.row-icon-button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: #fbfcfd;
+  color: var(--primary);
+  cursor: pointer;
+}
+
+.row-icon-button:disabled {
+  color: var(--muted);
+  background: #f1f3f6;
 }
 
 .empty-state {
