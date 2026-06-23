@@ -2570,7 +2570,7 @@ export default function Home() {
                             {folder.pathCache ?? "Repository"} · {folder.childFolderCount} folders · {folder.fileCount} files
                           </span>
                           {hasContents ? (
-                            <small>Restore this folder first, then remove its child folders/files before permanent delete.</small>
+                            <small>Permanent delete will remove this folder and all contained child folders/files.</small>
                           ) : null}
                         </div>
                         <div className="decision-actions">
@@ -2578,8 +2578,7 @@ export default function Home() {
                           <button
                             className="row-text-button"
                             type="button"
-                            disabled={hasContents}
-                            title={hasContents ? "Restore this folder and clear its contents first" : "Permanently delete folder"}
+                            title={hasContents ? "Permanently delete folder and contents" : "Permanently delete folder"}
                             onClick={() => void handlePermanentDeleteFolder(folder.id)}
                           >
                             Permanent Delete

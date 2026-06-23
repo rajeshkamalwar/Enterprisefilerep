@@ -874,13 +874,10 @@ export class RepositoryService {
   async permanentlyDeleteFolder(id: string, user: AuthenticatedUser) {
     const folder = await this.prisma.folder.findUnique({
       where: { id },
-      include: {
-        _count: {
-          select: {
-            children: true,
-            files: true
-          }
-        }
+      select: {
+        id: true,
+        name: true,
+        isDeleted: true
       }
     });
 
@@ -888,22 +885,62 @@ export class RepositoryService {
       throw new NotFoundException("Deleted folder not found");
     }
 
-    if (folder._count.children > 0 || folder._count.files > 0) {
-      throw new ConflictException("Folder must be empty before permanent deletion");
-    }
+    const deletedCounts = await this.prisma.$transaction(async (tx) => {
+      const folderIds = await this.collectFolderTreeIds(tx, folder.id);
+      const files = await tx.repositoryFile.findMany({
+        where: {
+          folderId: {
+            in: folderIds
+          }
+        },
+        select: {
+          id: true
+        }
+      });
+      const fileIds = files.map((file) => file.id);
 
-    await this.prisma.folder.delete({ where: { id } });
+      if (fileIds.length > 0) {
+        await tx.repositoryFile.updateMany({
+          where: {
+            id: {
+              in: fileIds
+            }
+          },
+          data: {
+            currentVersionId: null
+          }
+        });
+        await tx.repositoryFile.deleteMany({
+          where: {
+            id: {
+              in: fileIds
+            }
+          }
+        });
+      }
+
+      for (const folderId of [...folderIds].reverse()) {
+        await tx.folder.delete({ where: { id: folderId } });
+      }
+
+      return {
+        folders: folderIds.length,
+        files: fileIds.length
+      };
+    });
+
     await this.prisma.auditLog.create({
       data: {
         actorUserId: user.id,
         action: "FOLDER_PERMANENTLY_DELETED",
         entityType: "folder",
         entityId: folder.id,
-        entityName: folder.name
+        entityName: folder.name,
+        newValueJson: deletedCounts
       }
     });
 
-    return { deleted: true, id };
+    return { deleted: true, id, ...deletedCounts };
   }
 
   async listFolderRecycleBin(user: AuthenticatedUser, limit = 50) {
@@ -993,6 +1030,16 @@ export class RepositoryService {
       });
       await this.rebuildChildPathCaches(tx, child.id, childPath);
     }
+  }
+
+  private async collectFolderTreeIds(tx: Prisma.TransactionClient, parentId: string): Promise<string[]> {
+    const children = await tx.folder.findMany({
+      where: { parentId },
+      select: { id: true }
+    });
+
+    const childTrees = await Promise.all(children.map((child) => this.collectFolderTreeIds(tx, child.id)));
+    return [parentId, ...childTrees.flat()];
   }
 
   private extensionFromName(name: string) {

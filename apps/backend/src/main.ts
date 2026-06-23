@@ -1,12 +1,20 @@
 import "reflect-metadata";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { NestFactory } from "@nestjs/core";
 import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import { FastifyAdapter, NestFastifyApplication } from "@nestjs/platform-fastify";
-import { AppModule } from "./modules/app.module";
+import { config as loadEnv } from "dotenv";
+
+const envPath = [path.resolve(process.cwd(), ".env"), path.resolve(process.cwd(), "../../.env")].find((candidate) =>
+  fs.existsSync(candidate)
+);
+loadEnv(envPath ? { path: envPath } : undefined);
 
 async function bootstrap() {
+  const { AppModule } = await import("./modules/app.module");
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter()
