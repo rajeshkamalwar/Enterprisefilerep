@@ -2559,18 +2559,33 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="request-list">
-                  {(data?.deletedFolders ?? []).map((folder) => (
-                    <div className="request-item" key={folder.id}>
-                      <div>
-                        <strong>{folder.name}</strong>
-                        <span>{folder.pathCache ?? "Repository"} · {folder.fileCount} files</span>
+                  {(data?.deletedFolders ?? []).map((folder) => {
+                    const hasContents = folder.childFolderCount > 0 || folder.fileCount > 0;
+
+                    return (
+                      <div className="request-item" key={folder.id}>
+                        <div>
+                          <strong>{folder.name}</strong>
+                          <span>
+                            {folder.pathCache ?? "Repository"} · {folder.childFolderCount} folders · {folder.fileCount} files
+                          </span>
+                          {hasContents ? <small>Permanent delete is available after child folders and files are removed.</small> : null}
+                        </div>
+                        <div className="decision-actions">
+                          <button className="row-text-button" type="button" onClick={() => void handleRestoreRecycleFolder(folder.id)}>Restore</button>
+                          <button
+                            className="row-text-button"
+                            type="button"
+                            disabled={hasContents}
+                            title={hasContents ? "Delete child folders and files first" : "Permanently delete folder"}
+                            onClick={() => void handlePermanentDeleteFolder(folder.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
-                      <div className="decision-actions">
-                        <button className="row-text-button" type="button" onClick={() => void handleRestoreRecycleFolder(folder.id)}>Restore</button>
-                        <button className="row-text-button" type="button" onClick={() => void handlePermanentDeleteFolder(folder.id)}>Delete</button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {data && data.deletedFolders.length === 0 ? <p className="empty-state">No deleted folders.</p> : null}
                 </div>
               </article>
