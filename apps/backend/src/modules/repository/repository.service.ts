@@ -11,6 +11,7 @@ type UploadFields = {
   folderId: string;
   classification?: FileClassification;
   description?: string;
+  ownerUserId?: string;
 };
 
 type ListFilesInput = {
@@ -406,6 +407,12 @@ export class RepositoryService {
       resourceId: folder.id
     });
 
+    const owner = await this.resolveAssignableOwner({
+      ownerUserId: fields.ownerUserId,
+      actorUser,
+      departmentId: folder.departmentId
+    });
+
     const stored = await this.storage.saveToQuarantine({
       stream: file.file,
       originalName: file.filename
@@ -421,7 +428,7 @@ export class RepositoryService {
           classification: fields.classification ?? "INTERNAL",
           description: fields.description,
           departmentId: folder.departmentId,
-          createdById: actorUser.id
+          createdById: owner.id
         }
       });
 
@@ -727,24 +734,11 @@ export class RepositoryService {
       resourceId: file.id
     });
 
-    const owner = await this.prisma.user.findUnique({
-      where: { id: input.ownerUserId },
-      select: {
-        id: true,
-        fullName: true,
-        email: true,
-        departmentId: true,
-        status: true
-      }
+    const owner = await this.resolveAssignableOwner({
+      ownerUserId: input.ownerUserId,
+      actorUser: input.user,
+      departmentId: file.departmentId
     });
-
-    if (!owner || owner.status !== "ACTIVE") {
-      throw new BadRequestException("Active owner user not found");
-    }
-
-    if (!input.user.roles.includes("SUPER_ADMIN") && owner.departmentId !== file.departmentId) {
-      throw new BadRequestException("Department admins can assign files only to users in the file department");
-    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const updatedFile = await tx.repositoryFile.update({
@@ -779,6 +773,34 @@ export class RepositoryService {
     });
 
     return this.serializeFile(updated);
+  }
+
+  private async resolveAssignableOwner(input: {
+    ownerUserId?: string | null;
+    actorUser: AuthenticatedUser;
+    departmentId: string | null;
+  }) {
+    const ownerId = input.ownerUserId?.trim() || input.actorUser.id;
+    const owner = await this.prisma.user.findUnique({
+      where: { id: ownerId },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        departmentId: true,
+        status: true
+      }
+    });
+
+    if (!owner || owner.status !== "ACTIVE") {
+      throw new BadRequestException("Active owner user not found");
+    }
+
+    if (!input.actorUser.roles.includes("SUPER_ADMIN") && owner.departmentId !== input.departmentId) {
+      throw new BadRequestException("Department admins can assign files only to users in the file department");
+    }
+
+    return owner;
   }
 
   async deleteFile(id: string, user: AuthenticatedUser) {

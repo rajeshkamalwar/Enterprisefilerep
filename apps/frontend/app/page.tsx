@@ -758,6 +758,7 @@ export default function Home() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadClassification, setUploadClassification] = useState("INTERNAL");
   const [uploadDescription, setUploadDescription] = useState("");
+  const [uploadOwnerUserId, setUploadOwnerUserId] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [repositoryDragActive, setRepositoryDragActive] = useState(false);
@@ -1032,6 +1033,16 @@ export default function Home() {
   const canReadUsers = canApproveAccess;
   const canWriteUsers = Boolean(user?.roles.includes("SUPER_ADMIN"));
   const canManageDepartments = Boolean(user?.roles.includes("SUPER_ADMIN"));
+  const uploadOwnerOptions = useMemo(() => {
+    const users = data?.managedUsers ?? [];
+    const activeUsers = users.filter((managedUser) => managedUser.status === "ACTIVE");
+
+    if (canWriteUsers) {
+      return activeUsers;
+    }
+
+    return activeUsers.filter((managedUser) => managedUser.departmentId === currentFolderDepartment?.id);
+  }, [canWriteUsers, currentFolderDepartment?.id, data?.managedUsers]);
   const activeModuleConfig = modules.find((module) => module.id === activeModule) ?? modules[0];
   const moduleAccess: Record<ModuleId, boolean> = {
     dashboard: true,
@@ -1374,6 +1385,11 @@ export default function Home() {
     selectUploadFile(event.target.files?.[0] ?? null);
   }
 
+  function openUploadModal() {
+    setUploadOwnerUserId(uploadOwnerOptions.find((managedUser) => managedUser.id === user?.id)?.id ?? uploadOwnerOptions[0]?.id ?? "");
+    setUploadOpen(true);
+  }
+
   function handleRepositoryDragOver(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
@@ -1398,7 +1414,7 @@ export default function Home() {
     }
 
     if (selected) {
-      setUploadOpen(true);
+      openUploadModal();
     }
   }
 
@@ -1437,6 +1453,9 @@ export default function Home() {
       if (uploadDescription.trim()) {
         body.append("description", uploadDescription.trim());
       }
+      if (uploadOwnerUserId) {
+        body.append("ownerUserId", uploadOwnerUserId);
+      }
       body.append("file", uploadFile);
 
       const result = await uploadRequest("/files/upload", token, body);
@@ -1453,6 +1472,7 @@ export default function Home() {
       await loadDashboard(token, searchQuery, folderId);
       setUploadFile(null);
       setUploadDescription("");
+      setUploadOwnerUserId("");
       setUploadOpen(false);
       setUploadMessage(result.scanQueued === false ? result.scanQueueError ?? "Uploaded, but scan queueing failed." : "Upload complete.");
     } catch (caught) {
@@ -2251,7 +2271,9 @@ export default function Home() {
 
     const usageCount = target.userCount + target.folderCount + target.fileCount;
     if (usageCount > 0) {
-      setDepartmentMessage("Department is in use. Disable it instead of deleting.");
+      setDepartmentMessage(
+        `${target.name} cannot be hard-deleted because it has ${target.userCount} users, ${target.folderCount} folders, and ${target.fileCount} files. Disable it first, or move those records to another department before deleting.`
+      );
       return;
     }
 
@@ -2513,7 +2535,7 @@ export default function Home() {
                         <FolderPlus aria-hidden="true" size={16} />
                         New Folder
                       </button>
-                      <button className="primary-button" type="button" onClick={() => setUploadOpen(true)}>
+                      <button className="primary-button" type="button" onClick={openUploadModal}>
                         <Upload aria-hidden="true" size={16} />
                         New
                       </button>
@@ -2769,7 +2791,7 @@ export default function Home() {
                     <small>
                       Files will be added into {data?.folder?.folder.name ?? "this folder"} under {currentFolderDepartmentName}.
                     </small>
-                    <button className="primary-button" type="button" onClick={() => setUploadOpen(true)}>
+                    <button className="primary-button" type="button" onClick={openUploadModal}>
                       Browse Files
                     </button>
                   </div>
@@ -3011,7 +3033,7 @@ export default function Home() {
                       <button
                         className="row-text-button danger"
                         type="button"
-                        disabled={departmentDeletingId === department.id || department.userCount + department.folderCount + department.fileCount > 0}
+                        disabled={departmentDeletingId === department.id}
                         title={department.userCount + department.folderCount + department.fileCount > 0 ? "Disable departments that already have users, folders, or files" : "Delete department"}
                         onClick={() => void handleDeleteDepartment(department)}
                       >
@@ -3834,12 +3856,26 @@ export default function Home() {
                 />
               </label>
 
+              <label>
+                <span>Owner Allocation</span>
+                <select value={uploadOwnerUserId} onChange={(event) => setUploadOwnerUserId(event.target.value)}>
+                  <option value="">Select owner</option>
+                  {uploadOwnerOptions.map((managedUser) => (
+                    <option value={managedUser.id} key={managedUser.id}>
+                      {managedUser.fullName} · {managedUser.department?.code ?? "No Dept"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
               {uploadFile ? (
                 <p className="upload-file-note">{uploadFile.name} · {formatBytes(uploadFile.size)}</p>
               ) : null}
               <p className="upload-policy-note">{uploadPolicyText}</p>
               <p className="upload-policy-note">
-                Owner: {user?.fullName ?? user?.email ?? "Current user"}. The uploaded file is linked to the signed-in user.
+                {uploadOwnerOptions.length > 0
+                  ? "The uploaded file will be allocated to the selected active user."
+                  : "No active owner is available for this folder department."}
               </p>
               <p className="upload-policy-note">
                 Department: {currentFolderDepartmentName}. Files inherit department from the selected folder.
@@ -3849,7 +3885,7 @@ export default function Home() {
                 <button className="secondary-button" type="button" onClick={() => setUploadOpen(false)}>
                   Cancel
                 </button>
-                <button className="primary-button" type="submit" disabled={uploading}>
+                <button className="primary-button" type="submit" disabled={uploading || !uploadOwnerUserId}>
                   <Upload aria-hidden="true" size={17} />
                   {uploading ? "Uploading" : "Upload"}
                 </button>
@@ -4181,7 +4217,7 @@ export default function Home() {
               <button
                 className="secondary-button danger"
                 type="button"
-                disabled={viewingDepartment.userCount + viewingDepartment.folderCount + viewingDepartment.fileCount > 0}
+                disabled={departmentDeletingId === viewingDepartment.id}
                 onClick={() => void handleDeleteDepartment(viewingDepartment)}
               >
                 Delete

@@ -73,7 +73,8 @@ export class FilesController {
       {
         folderId,
         classification: this.parseClassification(this.getFieldValue(file, "classification")),
-        description: this.getFieldValue(file, "description")
+        description: this.getFieldValue(file, "description"),
+        ownerUserId: this.getFieldValue(file, "ownerUserId")
       },
       user
     );
