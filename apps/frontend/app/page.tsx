@@ -49,6 +49,12 @@ const modules = [
 
 type ModuleId = (typeof modules)[number]["id"];
 
+const moduleIds = new Set<string>(modules.map((module) => module.id));
+
+function isModuleId(value: string | null): value is ModuleId {
+  return Boolean(value && moduleIds.has(value));
+}
+
 const auditActions = [
   "LOGIN_SUCCESS",
   "LOGIN_FAILURE",
@@ -692,6 +698,19 @@ export default function Home() {
   }, [token]);
 
   useEffect(() => {
+    const syncModuleFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      const module = params.get("module");
+      setActiveModule(isModuleId(module) ? module : "dashboard");
+    };
+
+    syncModuleFromUrl();
+    window.addEventListener("popstate", syncModuleFromUrl);
+
+    return () => window.removeEventListener("popstate", syncModuleFromUrl);
+  }, []);
+
+  useEffect(() => {
     if (!data?.smtpSettings) {
       return;
     }
@@ -717,6 +736,24 @@ export default function Home() {
     setSettingsWarning(String(data.systemSettings.storageWarningThresholdPercent));
     setSettingsBackup(data.systemSettings.backupDestination ?? "");
   }, [data?.systemSettings]);
+
+  function activateModule(module: ModuleId, mode: "push" | "replace" = "push") {
+    setActiveModule(module);
+
+    const url = new URL(window.location.href);
+
+    if (module === "dashboard") {
+      url.searchParams.delete("module");
+    } else {
+      url.searchParams.set("module", module);
+    }
+
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+
+    if (nextUrl !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+      window.history[mode === "replace" ? "replaceState" : "pushState"](null, "", nextUrl);
+    }
+  }
 
   const kpis = useMemo(() => {
     if (!data) {
@@ -917,7 +954,7 @@ export default function Home() {
     const formData = new FormData(event.currentTarget);
     const query = String(formData.get("repositorySearch") ?? "");
     setSearchQuery(query);
-    setActiveModule("repository");
+    activateModule("repository");
 
     if (token) {
       void loadDashboard(token, query);
@@ -936,7 +973,7 @@ export default function Home() {
     setAuditQuery(filters.q);
     setAuditAction(filters.action);
     setAuditSuccess(filters.success);
-    setActiveModule("audit");
+    activateModule("audit");
 
     if (token) {
       void loadDashboard(token, searchQuery, activeFolderId, filters);
@@ -1740,7 +1777,7 @@ export default function Home() {
                 className={activeModule === module.id ? "nav-item active" : "nav-item"}
                 key={module.id}
                 type="button"
-                onClick={() => setActiveModule(module.id)}
+                onClick={() => activateModule(module.id)}
               >
                 <Icon aria-hidden="true" size={18} />
                 <span>{module.name}</span>
@@ -1792,7 +1829,7 @@ export default function Home() {
             <div className="heading-actions">
               {activeModule === "repository" ? (
                 <>
-                  <button className="secondary-button" type="button" onClick={() => setActiveModule("recycle")}>
+                  <button className="secondary-button" type="button" onClick={() => activateModule("recycle")}>
                     <ArchiveRestore aria-hidden="true" size={17} />
                     Recycle Bin
                   </button>
