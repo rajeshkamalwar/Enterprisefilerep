@@ -46,6 +46,13 @@ export class ScanQueueService implements OnModuleDestroy {
     return this.queue.getJobCounts("waiting", "active", "completed", "failed", "delayed", "paused");
   }
 
+  async healthCheck() {
+    return {
+      queueName: ScanQueueService.queueName,
+      counts: await this.getCounts()
+    };
+  }
+
   async createWorker() {
     const worker = new Worker<ScanJobData>(
       ScanQueueService.queueName,

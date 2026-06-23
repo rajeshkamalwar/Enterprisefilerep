@@ -14,6 +14,58 @@ export type QueueEmailInput = {
 export class MailerService {
   constructor(private readonly prisma: PrismaService) {}
 
+  getConfigurationStatus() {
+    const host = process.env.SMTP_HOST;
+    const fromEmail = process.env.SMTP_FROM_EMAIL;
+    const placeholderValues = ["smtp.example.com", "noreply@example.com", "change-me"];
+
+    const configured = Boolean(host && fromEmail) &&
+      !placeholderValues.includes(host ?? "") &&
+      !placeholderValues.includes(fromEmail ?? "") &&
+      process.env.SMTP_PASSWORD !== "change-me";
+
+    return {
+      configured,
+      host: host ?? null,
+      port: Number(process.env.SMTP_PORT ?? 587),
+      secure: process.env.SMTP_SECURE === "true",
+      fromEmail: fromEmail ?? null,
+      usernameConfigured: Boolean(process.env.SMTP_USER),
+      passwordConfigured: Boolean(process.env.SMTP_PASSWORD)
+    };
+  }
+
+  async verifyConnection() {
+    const configuration = this.getConfigurationStatus();
+
+    if (!configuration.configured) {
+      return configuration;
+    }
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT ?? 587),
+      secure: process.env.SMTP_SECURE === "true",
+      requireTLS: process.env.SMTP_REQUIRE_TLS !== "false",
+      connectionTimeout: 5_000,
+      greetingTimeout: 5_000,
+      socketTimeout: 5_000,
+      auth: process.env.SMTP_USER
+        ? {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASSWORD
+          }
+        : undefined
+    });
+
+    try {
+      await transporter.verify();
+      return configuration;
+    } finally {
+      transporter.close();
+    }
+  }
+
   async createDeliveryLog(input: QueueEmailInput) {
     const rendered = await this.renderTemplate(input.templateKey, input.variables ?? {});
 

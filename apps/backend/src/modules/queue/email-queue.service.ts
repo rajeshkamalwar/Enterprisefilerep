@@ -58,6 +58,13 @@ export class EmailQueueService implements OnModuleDestroy {
     return this.queue.getJobCounts("waiting", "active", "completed", "failed", "delayed", "paused");
   }
 
+  async healthCheck() {
+    return {
+      queueName: EmailQueueService.queueName,
+      counts: await this.getCounts()
+    };
+  }
+
   async createWorker() {
     const worker = new Worker<EmailJobData>(
       EmailQueueService.queueName,

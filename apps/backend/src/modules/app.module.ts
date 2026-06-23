@@ -9,6 +9,7 @@ import { DatabaseModule } from "./database/database.module";
 import { FilesController } from "./repository/files.controller";
 import { FoldersController } from "./repository/folders.controller";
 import { HealthController } from "./health/health.controller";
+import { HealthService } from "./health/health.service";
 import { RbacController } from "./rbac/rbac.controller";
 import { PermissionsGuard } from "./rbac/permissions.guard";
 import { RbacService } from "./rbac/rbac.service";
@@ -46,6 +47,7 @@ import { LocalStorageService } from "./storage/local-storage.service";
     AuthService,
     ClamavService,
     EmailQueueService,
+    HealthService,
     LocalStorageService,
     MailerService,
     PermissionsGuard,
