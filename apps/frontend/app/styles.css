@@ -1588,6 +1588,16 @@ textarea:focus-visible {
   color: var(--fmcc-text);
 }
 
+.repository-module .repository-actions .secondary-button.danger {
+  color: var(--danger);
+}
+
+.repository-module .repository-actions .secondary-button.danger:hover:not(:disabled) {
+  border-color: #ffd4cd;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
 .repository-module .repository-actions .primary-button,
 .repository-module .repository-simple-search .primary-button {
   background: var(--fmcc-primary);
@@ -3262,6 +3272,33 @@ h1 {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.delete-confirmation {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff8f6;
+  color: var(--text);
+}
+
+.delete-confirmation p {
+  margin: 0;
+  font-weight: 700;
+}
+
+.delete-confirmation span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.danger-action {
+  border-color: var(--danger) !important;
+  background: var(--danger) !important;
+  color: #ffffff !important;
 }
 
 @media (max-width: 1100px) {

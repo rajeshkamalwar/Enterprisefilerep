@@ -682,6 +682,8 @@ export default function Home() {
   const [folderDepartmentId, setFolderDepartmentId] = useState("");
   const [folderSaving, setFolderSaving] = useState(false);
   const [folderMessage, setFolderMessage] = useState<string | null>(null);
+  const [pendingDeleteFolder, setPendingDeleteFolder] = useState<FolderSummary | FolderDetail["folder"] | null>(null);
+  const [folderDeleting, setFolderDeleting] = useState(false);
   const [accessModalOpen, setAccessModalOpen] = useState(false);
   const [accessResourceType, setAccessResourceType] = useState("FOLDER");
   const [accessResourceId, setAccessResourceId] = useState("");
@@ -1311,6 +1313,30 @@ export default function Home() {
       await loadDashboard(token, searchQuery, activeFolderId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to delete file");
+    }
+  }
+
+  async function handleDeleteFolder(folder: FolderSummary | FolderDetail["folder"]) {
+    setPendingDeleteFolder(folder);
+    setError(null);
+  }
+
+  async function confirmDeleteFolder() {
+    if (!token || !pendingDeleteFolder) {
+      return;
+    }
+
+    setFolderDeleting(true);
+    try {
+      await apiRequest(`/folders/${pendingDeleteFolder.id}`, token, { method: "DELETE" });
+      const nextFolderId = pendingDeleteFolder.parentId ?? data?.roots.find((root) => root.id !== pendingDeleteFolder.id)?.id ?? null;
+      setFolderMessage("Folder moved to recycle bin.");
+      setPendingDeleteFolder(null);
+      await loadDashboard(token, searchQuery, nextFolderId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to delete folder");
+    } finally {
+      setFolderDeleting(false);
     }
   }
 
@@ -2059,6 +2085,12 @@ export default function Home() {
                           Rename
                         </button>
                       ) : null}
+                      {data?.folder?.folder ? (
+                        <button className="secondary-button danger" type="button" onClick={() => void handleDeleteFolder(data.folder!.folder)}>
+                          <XCircle aria-hidden="true" size={16} />
+                          Delete Folder
+                        </button>
+                      ) : null}
                       <button className="primary-button" type="button" onClick={() => setUploadOpen(true)}>
                         <Upload aria-hidden="true" size={16} />
                         Upload File
@@ -2161,6 +2193,10 @@ export default function Home() {
                             <button type="button" onClick={() => openEditFolder(folder)}>
                               <Pencil aria-hidden="true" size={15} />
                               Rename
+                            </button>
+                            <button className="danger" type="button" onClick={() => void handleDeleteFolder(folder)}>
+                              <XCircle aria-hidden="true" size={15} />
+                              Delete
                             </button>
                           </div>
                         </details>
@@ -2977,6 +3013,37 @@ export default function Home() {
                 </button>
               </div>
             </form>
+          </section>
+        </div>
+      ) : null}
+
+      {pendingDeleteFolder ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel" aria-label="Delete folder">
+            <div className="panel-header">
+              <div>
+                <h2>Delete Folder</h2>
+                <p>{pendingDeleteFolder.pathCache ?? pendingDeleteFolder.name}</p>
+              </div>
+              <button className="text-button" type="button" onClick={() => setPendingDeleteFolder(null)} disabled={folderDeleting}>
+                Close
+              </button>
+            </div>
+            <div className="delete-confirmation">
+              <p>
+                Move <strong>{pendingDeleteFolder.name}</strong> to the recycle bin?
+              </p>
+              <span>Files and child folders will not be permanently removed until they are deleted from the recycle bin.</span>
+            </div>
+            <div className="modal-actions">
+              <button className="secondary-button" type="button" onClick={() => setPendingDeleteFolder(null)} disabled={folderDeleting}>
+                Cancel
+              </button>
+              <button className="primary-button danger-action" type="button" onClick={() => void confirmDeleteFolder()} disabled={folderDeleting}>
+                <XCircle aria-hidden="true" size={17} />
+                {folderDeleting ? "Deleting" : "Move to Recycle Bin"}
+              </button>
+            </div>
           </section>
         </div>
       ) : null}
