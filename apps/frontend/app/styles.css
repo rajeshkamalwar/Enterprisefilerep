@@ -2436,6 +2436,43 @@ body {
   line-height: 1.2;
 }
 
+.repository-module .repository-location-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin: -1px 0 8px;
+}
+
+.repository-module .repository-location-meta small {
+  color: var(--lqd-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.repository-module .department-chip {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 22px;
+  border: 1px solid #b7e4d6;
+  border-radius: 999px;
+  background: #eaf8f2;
+  color: #166b52;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  padding: 0 8px;
+  text-transform: uppercase;
+}
+
+.repository-module .department-chip.compact {
+  min-height: 19px;
+  margin-top: 6px;
+  padding: 0 7px;
+}
+
 .repository-module .breadcrumb-list.repository-breadcrumbs {
   display: flex;
   flex-wrap: wrap;
@@ -2785,6 +2822,17 @@ body {
   color: var(--lqd-muted);
   font-size: 11px;
   font-weight: 700;
+}
+
+.repository-module .repository-simple-meta small {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #8492a6;
+  font-size: 10px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .repository-module .repository-simple-list[data-view-mode="grid"] .repository-simple-meta {

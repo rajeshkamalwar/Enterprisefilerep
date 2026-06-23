@@ -148,6 +148,7 @@ type RepositoryFile = {
     email: string;
   };
   department?: {
+    id?: string;
     name: string;
     code: string;
   } | null;
@@ -177,6 +178,11 @@ type FolderDetail = {
     name: string;
     pathCache: string | null;
     departmentId: string | null;
+    department?: {
+      id?: string;
+      name: string;
+      code: string;
+    } | null;
   };
   breadcrumbs: Array<{ id: string; name: string }>;
   children: FolderSummary[];
@@ -707,6 +713,7 @@ export default function Home() {
   const [searchClassification, setSearchClassification] = useState("");
   const [searchScanStatus, setSearchScanStatus] = useState("");
   const [searchExtension, setSearchExtension] = useState("");
+  const [repositoryDepartmentId, setRepositoryDepartmentId] = useState("");
   const [repositorySort, setRepositorySort] = useState<RepositorySort>("updated-desc");
   const [repositoryViewMode, setRepositoryViewMode] = useState<RepositoryViewMode>("list");
   const [auditQuery, setAuditQuery] = useState("");
@@ -926,6 +933,20 @@ export default function Home() {
     ];
   }, [data]);
 
+  const currentFolderDepartment = data?.folder?.folder.department ?? null;
+  const repositoryDepartmentOptions = data?.departments.length
+    ? data.departments.map((department) => ({ id: department.id, name: department.name, code: department.code }))
+    : data?.userOptions.departments ?? [];
+  const currentFolderDepartmentName = currentFolderDepartment
+    ? `${currentFolderDepartment.name} (${currentFolderDepartment.code})`
+    : "Unassigned";
+  const selectedRepositoryDepartment = repositoryDepartmentId
+    ? repositoryDepartmentOptions.find((department) => department.id === repositoryDepartmentId) ?? null
+    : null;
+  const selectedRepositoryDepartmentLabel = selectedRepositoryDepartment
+    ? `${selectedRepositoryDepartment.name} (${selectedRepositoryDepartment.code})`
+    : "All departments";
+
   const repositoryFolders = useMemo(() => {
     return [...(data?.folder?.children ?? [])].sort((left, right) => left.name.localeCompare(right.name));
   }, [data?.folder?.children]);
@@ -949,6 +970,20 @@ export default function Home() {
       return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
     });
   }, [data?.files, repositorySort]);
+  const visibleRepositoryFolders = useMemo(() => {
+    if (!repositoryDepartmentId) {
+      return repositoryFolders;
+    }
+
+    return repositoryFolders.filter((folder) => folder.departmentId === repositoryDepartmentId);
+  }, [repositoryDepartmentId, repositoryFolders]);
+  const visibleRepositoryFiles = useMemo(() => {
+    if (!repositoryDepartmentId) {
+      return repositoryFiles;
+    }
+
+    return repositoryFiles.filter((file) => file.department?.id === repositoryDepartmentId);
+  }, [repositoryDepartmentId, repositoryFiles]);
 
   const maxUploadBytes = data?.systemSettings?.maxUploadBytes ?? 262_144_000;
   const uploadPolicyText = `Max ${formatBytes(maxUploadBytes)} per file · ${supportedUploadExtensions.join(", ").toUpperCase()}`;
@@ -1012,7 +1047,8 @@ export default function Home() {
       const shouldLoadHealth = moduleContext === "dashboard" || moduleContext === "health";
       const shouldLoadAccess = moduleContext === "dashboard" || moduleContext === "access";
       const shouldLoadUsers = moduleContext === "users";
-      const shouldLoadDepartments = moduleContext === "departments" || moduleContext === "users";
+      const shouldLoadDepartmentOptions = moduleContext === "repository" || moduleContext === "users";
+      const shouldLoadDepartments = moduleContext === "repository" || moduleContext === "departments" || moduleContext === "users";
       const shouldLoadAudit = moduleContext === "audit";
       const shouldLoadSmtp = moduleContext === "smtp";
       const shouldLoadRoles = moduleContext === "roles";
@@ -1059,7 +1095,7 @@ export default function Home() {
           ? apiRequest<{ data: AccessRequest[] }>("/access-requests?status=PENDING&pageSize=5", activeToken)
           : Promise.resolve({ data: data?.approvalRequests ?? [] }),
         canReadUsers && shouldLoadUsers ? apiRequest<{ data: ManagedUser[] }>("/users?pageSize=6", activeToken) : Promise.resolve({ data: data?.managedUsers ?? [] }),
-        canReadUsers && shouldLoadUsers ? apiRequest<UserOptions>("/users/options", activeToken) : Promise.resolve(data?.userOptions ?? emptyUserOptions),
+        canReadUsers && shouldLoadDepartmentOptions ? apiRequest<UserOptions>("/users/options", activeToken) : Promise.resolve(data?.userOptions ?? emptyUserOptions),
         canManageDepartments && shouldLoadDepartments ? apiRequest<{ data: ManagedDepartment[] }>("/departments?pageSize=8", activeToken) : Promise.resolve({ data: data?.departments ?? [] }),
         canApproveAccess && shouldLoadAudit
           ? apiRequest<AuditLogResponse>(auditPath(filters), activeToken)
@@ -1180,6 +1216,7 @@ export default function Home() {
     setSearchClassification("");
     setSearchScanStatus("");
     setSearchExtension("");
+    setRepositoryDepartmentId("");
 
     if (token) {
       void loadDashboard(token, "", activeFolderId, undefined, emptyRepositoryFilters, "repository");
@@ -2269,6 +2306,12 @@ export default function Home() {
                         Back to dashboard
                       </button>
                       <h2>My Documents</h2>
+                      <div className="repository-location-meta">
+                        <span className="department-chip">
+                          {currentFolderDepartment ? currentFolderDepartment.code : "NO DEPT"}
+                        </span>
+                        <small>{currentFolderDepartmentName}</small>
+                      </div>
                       <div className="breadcrumb-list repository-breadcrumbs" aria-label="Folder breadcrumbs">
                         {(data?.folder?.breadcrumbs ?? []).map((crumb) => (
                           <button type="button" key={crumb.id} onClick={() => void handleOpenFolder(crumb.id)}>
@@ -2318,13 +2361,16 @@ export default function Home() {
                   </div>
 
                   <div className="repository-folder-strip" aria-label="Folders">
-                    {repositoryFolders.map((folder) => (
+                    {visibleRepositoryFolders.map((folder) => (
                       <article className="repository-folder-tile" key={folder.id}>
                         <button type="button" onClick={() => void handleOpenFolder(folder.id)}>
                           <span className="repository-folder-icon"><FolderTree aria-hidden="true" size={24} /></span>
                           <span>
                             <strong>{folder.name}</strong>
                             <small>{folder.childFolderCount} folders · {folder.fileCount} files</small>
+                            <span className="department-chip compact">
+                              {folder.department?.code ?? "NO DEPT"}
+                            </span>
                           </span>
                         </button>
                         <details
@@ -2377,8 +2423,17 @@ export default function Home() {
                   </form>
 
                   <div className="repository-simple-toolbar" aria-label="Repository actions">
-                    <span>{repositoryFolders.length} folders</span>
-                    <span>{repositoryFiles.length} files</span>
+                    <span>{visibleRepositoryFolders.length} folders</span>
+                    <span>{visibleRepositoryFiles.length} files</span>
+                    <label title="Filter by department">
+                      <Building2 aria-hidden="true" size={15} />
+                      <select value={repositoryDepartmentId} onChange={(event) => setRepositoryDepartmentId(event.target.value)}>
+                        <option value="">All departments</option>
+                        {(repositoryDepartmentOptions ?? []).map((department) => (
+                          <option value={department.id} key={department.id}>{department.name}</option>
+                        ))}
+                      </select>
+                    </label>
                     <label title="Sort files">
                       <SortAsc aria-hidden="true" size={15} />
                       <select value={repositorySort} onChange={(event) => setRepositorySort(event.target.value as RepositorySort)}>
@@ -2445,12 +2500,12 @@ export default function Home() {
                   <div className={`repository-table-head${repositoryViewMode === "grid" ? " is-grid-hidden" : ""}`} aria-hidden="true">
                     <span>Name</span>
                     <span>Size / Type</span>
-                    <span>Owner</span>
+                    <span>Owner / Dept</span>
                     <span />
                   </div>
 
                   <div className="repository-simple-list" data-view-mode={repositoryViewMode} aria-label="Repository items">
-                    {repositoryFiles.map((file) => (
+                    {visibleRepositoryFiles.map((file) => (
                       <article className="repository-simple-item" key={file.id}>
                         <button className="repository-simple-main" type="button" onClick={() => void handleOpenFile(file)}>
                           <span className="repository-file-thumb">
@@ -2461,10 +2516,16 @@ export default function Home() {
                             <small>
                               {fileExtension(file.originalName)} · {formatDate(file.updatedAt)}
                             </small>
+                            <span className="department-chip compact">
+                              {file.department?.code ?? "NO DEPT"}
+                            </span>
                           </span>
                         </button>
                         <span className="repository-simple-meta">{file.currentVersion ? formatBytes(Number(file.currentVersion.sizeBytes)) : "0 B"}</span>
-                        <span className="repository-simple-meta">{file.createdBy?.fullName ?? file.department?.name ?? "System"}</span>
+                        <span className="repository-simple-meta">
+                          {file.createdBy?.fullName ?? "System"}
+                          <small>{file.department?.name ?? "Unassigned"}</small>
+                        </span>
                         <details
                           className="repository-more-menu"
                           open={repositoryMenuId === `file:${file.id}`}
@@ -2501,8 +2562,10 @@ export default function Home() {
                       </article>
                     ))}
 
-                    {data && repositoryFiles.length === 0 ? (
-                      <p className="empty-state">This folder is empty.</p>
+                    {data && visibleRepositoryFiles.length === 0 ? (
+                      <p className="empty-state">
+                        {repositoryDepartmentId ? `No files found for ${selectedRepositoryDepartmentLabel}.` : "This folder is empty."}
+                      </p>
                     ) : null}
                   </div>
 
@@ -2515,7 +2578,9 @@ export default function Home() {
                     <Upload aria-hidden="true" size={34} />
                     <strong>{repositoryDragActive ? "Drop file to upload" : "Drag and drop files here"}</strong>
                     <span>{uploadPolicyText}</span>
-                    <small>Files will be added into {data?.folder?.folder.name ?? "this folder"} after classification.</small>
+                    <small>
+                      Files will be added into {data?.folder?.folder.name ?? "this folder"} under {currentFolderDepartmentName}.
+                    </small>
                     <button className="primary-button" type="button" onClick={() => setUploadOpen(true)}>
                       Browse Files
                     </button>
@@ -3391,11 +3456,17 @@ export default function Home() {
                   <span>Department</span>
                   <select value={folderDepartmentId} onChange={(event) => setFolderDepartmentId(event.target.value)}>
                     <option value="">Unassigned</option>
-                    {(data?.userOptions.departments ?? []).map((department) => (
+                    {(repositoryDepartmentOptions ?? []).map((department) => (
                       <option value={department.id} key={department.id}>{department.name}</option>
                     ))}
                   </select>
                 </label>
+              ) : null}
+
+              {!editingFolder && data?.folder?.folder.id ? (
+                <p className="upload-policy-note">
+                  This folder will inherit {currentFolderDepartmentName} from the current location.
+                </p>
               ) : null}
 
               <div className="modal-actions">
@@ -3459,6 +3530,9 @@ export default function Home() {
                 <p className="upload-file-note">{uploadFile.name} · {formatBytes(uploadFile.size)}</p>
               ) : null}
               <p className="upload-policy-note">{uploadPolicyText}</p>
+              <p className="upload-policy-note">
+                Department: {currentFolderDepartmentName}. Files inherit department from the selected folder.
+              </p>
 
               <div className="modal-actions">
                 <button className="secondary-button" type="button" onClick={() => setUploadOpen(false)}>
