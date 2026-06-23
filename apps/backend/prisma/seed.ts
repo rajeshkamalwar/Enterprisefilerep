@@ -1,0 +1,116 @@
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
+import "dotenv/config";
+import { permissions, roles } from "../src/shared/demo-data";
+
+const adapter = new PrismaPg({
+  connectionString: process.env.DATABASE_URL ?? "postgresql://filerepo:filerepo@localhost:5432/filerepo"
+});
+
+const prisma = new PrismaClient({ adapter });
+
+async function main() {
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "Admin@12345";
+
+  const department = await prisma.department.upsert({
+    where: { code: "IT" },
+    update: {},
+    create: {
+      code: "IT",
+      name: "Information Technology",
+      description: "System administration and platform ownership"
+    }
+  });
+
+  for (const permission of permissions) {
+    await prisma.permission.upsert({
+      where: { key: permission },
+      update: {},
+      create: {
+        key: permission,
+        description: permission
+      }
+    });
+  }
+
+  for (const role of roles) {
+    const createdRole = await prisma.role.upsert({
+      where: { code: role.code },
+      update: {
+        name: role.name,
+        description: role.description,
+        isSystemRole: true
+      },
+      create: {
+        code: role.code,
+        name: role.name,
+        description: role.description,
+        isSystemRole: true
+      }
+    });
+
+    for (const permissionKey of role.permissions) {
+      await prisma.rolePermission.upsert({
+        where: {
+          roleId_permissionKey: {
+            roleId: createdRole.id,
+            permissionKey
+          }
+        },
+        update: {},
+        create: {
+          roleId: createdRole.id,
+          permissionKey
+        }
+      });
+    }
+  }
+
+  const adminRole = await prisma.role.findUniqueOrThrow({
+    where: { code: "SUPER_ADMIN" }
+  });
+
+  const admin = await prisma.user.upsert({
+    where: { email: "admin@company.com" },
+    update: {
+      departmentId: department.id,
+      status: "ACTIVE"
+    },
+    create: {
+      email: "admin@company.com",
+      fullName: "System Admin",
+      employeeCode: "ADMIN-001",
+      country: "India",
+      departmentId: department.id,
+      passwordHash: await bcrypt.hash(adminPassword, 12)
+    }
+  });
+
+  await prisma.userRole.upsert({
+    where: {
+      userId_roleId: {
+        userId: admin.id,
+        roleId: adminRole.id
+      }
+    },
+    update: {},
+    create: {
+      userId: admin.id,
+      roleId: adminRole.id
+    }
+  });
+
+  console.log("Seed complete");
+  console.log("Admin email: admin@company.com");
+  console.log("Admin password:", adminPassword);
+}
+
+main()
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

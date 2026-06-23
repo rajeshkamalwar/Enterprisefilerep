@@ -1,8 +1,13 @@
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get, UseGuards } from "@nestjs/common";
+import { AuthGuard } from "../auth/auth.guard";
+import { RequirePermissions } from "../rbac/permissions.decorator";
+import { PermissionsGuard } from "../rbac/permissions.guard";
 
+@UseGuards(AuthGuard, PermissionsGuard)
 @Controller("admin")
 export class AdminController {
   @Get("dashboard")
+  @RequirePermissions("settings.read")
   dashboard() {
     return {
       totalUsers: 143,
@@ -17,6 +22,7 @@ export class AdminController {
   }
 
   @Get("storage")
+  @RequirePermissions("backup.read")
   storage() {
     return {
       driver: process.env.STORAGE_DRIVER ?? "local",

@@ -12,6 +12,10 @@
     "lint": "npm run lint --workspaces",
     "typecheck": "npm run typecheck --workspaces"
   },
+  "overrides": {
+    "@hono/node-server": "^1.19.13",
+    "postcss": "^8.5.15"
+  },
   "engines": {
     "node": ">=22"
   }

@@ -1,8 +1,13 @@
-import { Body, Controller, Get, Param, Post } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { AuthGuard } from "../auth/auth.guard";
+import { RequirePermissions } from "../rbac/permissions.decorator";
+import { PermissionsGuard } from "../rbac/permissions.guard";
 
+@UseGuards(AuthGuard, PermissionsGuard)
 @Controller("access-requests")
 export class AccessRequestsController {
   @Get()
+  @RequirePermissions("permission.assign")
   list() {
     return {
       data: [
@@ -18,6 +23,7 @@ export class AccessRequestsController {
   }
 
   @Post()
+  @RequirePermissions("file.read")
   create(@Body() body: Record<string, unknown>) {
     return {
       id: "request_new",
@@ -27,6 +33,7 @@ export class AccessRequestsController {
   }
 
   @Post(":id/approve")
+  @RequirePermissions("permission.assign")
   approve(@Param("id") id: string, @Body() body: { decisionReason?: string }) {
     return {
       id,
@@ -37,6 +44,7 @@ export class AccessRequestsController {
   }
 
   @Post(":id/reject")
+  @RequirePermissions("permission.assign")
   reject(@Param("id") id: string, @Body() body: { decisionReason?: string }) {
     return {
       id,

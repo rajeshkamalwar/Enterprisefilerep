@@ -1,8 +1,13 @@
-import { Body, Controller, Get, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Get, Patch, Post, UseGuards } from "@nestjs/common";
+import { AuthGuard } from "../auth/auth.guard";
+import { RequirePermissions } from "../rbac/permissions.decorator";
+import { PermissionsGuard } from "../rbac/permissions.guard";
 
+@UseGuards(AuthGuard, PermissionsGuard)
 @Controller("settings/smtp")
 export class SmtpController {
   @Get()
+  @RequirePermissions("smtp.read")
   getSettings() {
     return {
       host: process.env.SMTP_HOST ?? null,
@@ -16,6 +21,7 @@ export class SmtpController {
   }
 
   @Patch()
+  @RequirePermissions("smtp.update")
   updateSettings(@Body() body: Record<string, unknown>) {
     return {
       updated: true,
@@ -25,6 +31,7 @@ export class SmtpController {
   }
 
   @Post("test")
+  @RequirePermissions("smtp.update")
   testEmail(@Body() body: { to: string }) {
     return {
       queued: true,
@@ -34,6 +41,7 @@ export class SmtpController {
   }
 
   @Get("delivery-logs")
+  @RequirePermissions("smtp.read")
   logs() {
     return {
       data: [],

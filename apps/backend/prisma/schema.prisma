@@ -1,0 +1,208 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum ResourceType {
+  GLOBAL
+  DEPARTMENT
+  PROJECT
+  FOLDER
+  FILE
+}
+
+enum SubjectType {
+  USER
+  GROUP
+  ROLE
+}
+
+enum AuditAction {
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  LOGOUT
+  USER_CREATED
+  USER_UPDATED
+  ROLE_CREATED
+  PERMISSION_ASSIGNED
+  ACCESS_DENIED
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  passwordHash String       @map("password_hash")
+  fullName     String       @map("full_name")
+  employeeCode String?      @map("employee_code")
+  country      String?
+  timezone     String       @default("Asia/Calcutta")
+  status       UserStatus   @default(ACTIVE)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  lastLoginAt  DateTime?    @map("last_login_at")
+
+  departmentId String?      @map("department_id")
+  department   Department?  @relation(fields: [departmentId], references: [id])
+  roles        UserRole[]
+  groupLinks   GroupMember[]
+  sessions     UserSession[]
+  auditLogs    AuditLog[]   @relation("AuditActor")
+
+  @@map("users")
+}
+
+model Department {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  code              String   @unique
+  description       String?
+  storageQuotaBytes BigInt?  @map("storage_quota_bytes")
+  status            String   @default("ACTIVE")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  users  User[]
+  groups Group[]
+
+  @@map("departments")
+}
+
+model Role {
+  id           String           @id @default(cuid())
+  code         String           @unique
+  name         String
+  description  String?
+  isSystemRole Boolean          @default(false) @map("is_system_role")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  key         String   @id
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model UserRole {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  roleId     String   @map("role_id")
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id            String   @id @default(cuid())
+  roleId        String   @map("role_id")
+  permissionKey String   @map("permission_key")
+  assignedAt    DateTime @default(now()) @map("assigned_at")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+
+  @@unique([roleId, permissionKey])
+  @@map("role_permissions")
+}
+
+model Group {
+  id           String   @id @default(cuid())
+  name         String
+  description  String?
+  departmentId String?  @map("department_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  department Department?   @relation(fields: [departmentId], references: [id])
+  members    GroupMember[]
+
+  @@unique([name, departmentId])
+  @@map("groups")
+}
+
+model GroupMember {
+  id        String   @id @default(cuid())
+  groupId   String   @map("group_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@map("group_members")
+}
+
+model AccessControlEntry {
+  id            String       @id @default(cuid())
+  subjectType   SubjectType  @map("subject_type")
+  subjectId     String       @map("subject_id")
+  resourceType  ResourceType @map("resource_type")
+  resourceId    String       @map("resource_id")
+  permissionKey String       @map("permission_key")
+  createdBy     String?      @map("created_by")
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  @@index([subjectType, subjectId])
+  @@index([resourceType, resourceId])
+  @@unique([subjectType, subjectId, resourceType, resourceId, permissionKey])
+  @@map("access_control_entries")
+}
+
+model UserSession {
+  id               String    @id @default(cuid())
+  userId           String    @map("user_id")
+  refreshTokenHash String    @map("refresh_token_hash")
+  ipAddress        String?   @map("ip_address")
+  userAgent        String?   @map("user_agent")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_sessions")
+}
+
+model AuditLog {
+  id            String      @id @default(cuid())
+  actorUserId   String?     @map("actor_user_id")
+  action        AuditAction
+  entityType    String?     @map("entity_type")
+  entityId      String?     @map("entity_id")
+  entityName    String?     @map("entity_name")
+  oldValueJson  Json?       @map("old_value_json")
+  newValueJson  Json?       @map("new_value_json")
+  ipAddress     String?     @map("ip_address")
+  userAgent     String?     @map("user_agent")
+  success       Boolean     @default(true)
+  failureReason String?     @map("failure_reason")
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  actor User? @relation("AuditActor", fields: [actorUserId], references: [id])
+
+  @@index([actorUserId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

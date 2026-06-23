@@ -36,13 +36,12 @@ The repository currently contains the foundation only. Endpoints that mention st
 
 ## Recommended Next Milestones
 
-1. Database schema and migrations.
-2. Real auth with password hashing and revocable sessions.
-3. RBAC persistence and backend guards.
-4. Local storage adapter and file metadata.
-5. Multipart upload plus quarantine flow.
-6. ClamAV worker and scan status transitions.
-7. Audit log writer.
-8. SMTP queue and templates.
-9. Search indexing.
-10. Production hardening for Hostinger VPS.
+1. Run the first database migration and seed against Postgres.
+2. Add revocable refresh-token sessions.
+3. Local storage adapter and file metadata.
+4. Multipart upload plus quarantine flow.
+5. ClamAV worker and scan status transitions.
+6. Audit log expansion for file and admin events.
+7. SMTP queue and templates.
+8. Search indexing.
+9. Production hardening for Hostinger VPS.

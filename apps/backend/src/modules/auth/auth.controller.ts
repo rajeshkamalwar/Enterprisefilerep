@@ -1,4 +1,5 @@
 import { Body, Controller, Post } from "@nestjs/common";
+import { AuthService } from "./auth.service";
 
 type LoginBody = {
   email: string;
@@ -7,18 +8,11 @@ type LoginBody = {
 
 @Controller("auth")
 export class AuthController {
+  constructor(private readonly auth: AuthService) {}
+
   @Post("login")
   login(@Body() body: LoginBody) {
-    return {
-      accessToken: "demo-access-token-replace-with-jwt",
-      refreshToken: "demo-refresh-token-replace-with-revocable-session",
-      user: {
-        id: "user_demo_admin",
-        email: body.email,
-        fullName: "Demo Admin",
-        roles: ["SUPER_ADMIN"]
-      }
-    };
+    return this.auth.login(body);
   }
 
   @Post("logout")
