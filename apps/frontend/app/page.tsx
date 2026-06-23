@@ -16,6 +16,8 @@ import {
   Gauge,
   History,
   KeyRound,
+  LayoutGrid,
+  List,
   LockKeyhole,
   LogOut,
   Mail,
@@ -25,6 +27,8 @@ import {
   ServerCog,
   Settings,
   ShieldCheck,
+  SlidersHorizontal,
+  SortAsc,
   Upload,
   Users,
   XCircle
@@ -314,6 +318,9 @@ type RepositoryFilters = {
   extension: string;
 };
 
+type RepositoryView = "grid" | "list";
+type RepositorySort = "name-asc" | "updated-desc" | "size-desc" | "classification-asc";
+
 type SmtpSettings = {
   configured: boolean;
   source: string;
@@ -486,6 +493,12 @@ function titleCase(value: string) {
     .join(" ");
 }
 
+function fileExtension(fileName: string) {
+  const index = fileName.lastIndexOf(".");
+
+  return index > -1 ? fileName.slice(index + 1).toUpperCase() : "FILE";
+}
+
 function auditPath(filters: AuditFilters) {
   const params = new URLSearchParams({ pageSize: "20" });
 
@@ -599,6 +612,8 @@ export default function Home() {
   const [searchClassification, setSearchClassification] = useState("");
   const [searchScanStatus, setSearchScanStatus] = useState("");
   const [searchExtension, setSearchExtension] = useState("");
+  const [repositoryView, setRepositoryView] = useState<RepositoryView>("grid");
+  const [repositorySort, setRepositorySort] = useState<RepositorySort>("updated-desc");
   const [auditQuery, setAuditQuery] = useState("");
   const [auditAction, setAuditAction] = useState("");
   const [auditSuccess, setAuditSuccess] = useState("all");
@@ -771,6 +786,30 @@ export default function Home() {
       { label: "Pending Reviews", value: formatNumber(data.dashboard.pendingAccessRequests), detail: "Access requests awaiting decision" }
     ];
   }, [data]);
+
+  const repositoryFolders = useMemo(() => {
+    return [...(data?.folder?.children ?? [])].sort((left, right) => left.name.localeCompare(right.name));
+  }, [data?.folder?.children]);
+
+  const repositoryFiles = useMemo(() => {
+    const files = [...(data?.files ?? [])];
+
+    return files.sort((left, right) => {
+      if (repositorySort === "name-asc") {
+        return left.originalName.localeCompare(right.originalName);
+      }
+
+      if (repositorySort === "size-desc") {
+        return Number(right.currentVersion?.sizeBytes ?? 0) - Number(left.currentVersion?.sizeBytes ?? 0);
+      }
+
+      if (repositorySort === "classification-asc") {
+        return left.classification.localeCompare(right.classification) || left.originalName.localeCompare(right.originalName);
+      }
+
+      return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+    });
+  }, [data?.files, repositorySort]);
 
   const canApproveAccess = Boolean(user?.roles.some((role) => role === "SUPER_ADMIN" || role === "DEPARTMENT_ADMIN"));
   const canReadUsers = canApproveAccess;
@@ -1965,49 +2004,44 @@ export default function Home() {
                   ))}
                 </div>
 
-                <div className="repository-stats" aria-label="Repository summary">
-                  <span><strong>{data?.roots?.length ?? 0}</strong> root folders</span>
-                  <span><strong>{data?.folder?.children?.length ?? 0}</strong> child folders</span>
-                  <span><strong>{data?.files?.length ?? 0}</strong> {searchQuery.trim() ? "matching files" : "folder files"}</span>
-                  <span><strong>{titleCase(data?.dashboard.smtpStatus ?? "smtp")}</strong> SMTP</span>
-                </div>
-
-                <form className="module-filter-bar repository-filter-bar" onSubmit={handleSearch}>
-                  <label className="repository-search-field">
-                    <span>Find files</span>
+                <form className="repository-drive-bar" onSubmit={handleSearch}>
+                  <label className="repository-search-field" title="Search repository files">
+                    <Search aria-hidden="true" size={18} />
                     <input
                       name="repositorySearch"
                       value={searchQuery}
                       onChange={(event) => setSearchQuery(event.target.value)}
-                      placeholder="Search name, extension, or description"
+                      placeholder="Search in this repository"
                     />
                   </label>
-                  <label>
-                    <span>Classification</span>
-                    <select value={searchClassification} onChange={(event) => setSearchClassification(event.target.value)}>
-                      <option value="">All</option>
-                      <option value="PUBLIC_INTERNAL">Public Internal</option>
-                      <option value="INTERNAL">Internal</option>
-                      <option value="CONFIDENTIAL">Confidential</option>
-                      <option value="RESTRICTED">Restricted</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>Scan status</span>
-                    <select value={searchScanStatus} onChange={(event) => setSearchScanStatus(event.target.value)}>
-                      <option value="">All</option>
-                      <option value="PENDING">Pending</option>
-                      <option value="SCANNING">Scanning</option>
-                      <option value="CLEAN">Clean</option>
-                      <option value="INFECTED">Infected</option>
-                      <option value="FAILED">Failed</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>Extension</span>
-                    <input value={searchExtension} onChange={(event) => setSearchExtension(event.target.value)} placeholder="pdf" />
-                  </label>
-                  <div className="repository-filter-actions">
+                  <div className="repository-drive-controls">
+                    <label className="repository-select-control" title="Sort files">
+                      <SortAsc aria-hidden="true" size={16} />
+                      <select value={repositorySort} onChange={(event) => setRepositorySort(event.target.value as RepositorySort)}>
+                        <option value="updated-desc">Latest first</option>
+                        <option value="name-asc">Name A-Z</option>
+                        <option value="size-desc">Largest first</option>
+                        <option value="classification-asc">Classification</option>
+                      </select>
+                    </label>
+                    <div className="repository-view-toggle" aria-label="Repository view">
+                      <button
+                        className={repositoryView === "grid" ? "active" : ""}
+                        type="button"
+                        title="Grid view"
+                        onClick={() => setRepositoryView("grid")}
+                      >
+                        <LayoutGrid aria-hidden="true" size={16} />
+                      </button>
+                      <button
+                        className={repositoryView === "list" ? "active" : ""}
+                        type="button"
+                        title="List view"
+                        onClick={() => setRepositoryView("list")}
+                      >
+                        <List aria-hidden="true" size={16} />
+                      </button>
+                    </div>
                     <button className="secondary-button" type="button" onClick={handleRepositoryClear}>
                       <XCircle aria-hidden="true" size={16} />
                       Clear
@@ -2019,110 +2053,160 @@ export default function Home() {
                   </div>
                 </form>
 
-                <div className="repository-section-heading">
-                  <div>
-                    <h3>Folders</h3>
-                    <p>{data?.folder?.children?.length ?? 0} available in this location</p>
-                  </div>
-                  <button className="row-text-button" type="button" onClick={() => activateModule("recycle")}>
-                    <ArchiveRestore aria-hidden="true" size={15} />
-                    Recycle Bin
-                  </button>
+                <div className="repository-filter-chips" aria-label="Repository filters">
+                  <span><SlidersHorizontal aria-hidden="true" size={14} /> Filters</span>
+                  <label>
+                    <select value={searchClassification} onChange={(event) => setSearchClassification(event.target.value)}>
+                      <option value="">Any classification</option>
+                      <option value="PUBLIC_INTERNAL">Public Internal</option>
+                      <option value="INTERNAL">Internal</option>
+                      <option value="CONFIDENTIAL">Confidential</option>
+                      <option value="RESTRICTED">Restricted</option>
+                    </select>
+                  </label>
+                  <label>
+                    <select value={searchScanStatus} onChange={(event) => setSearchScanStatus(event.target.value)}>
+                      <option value="">Any scan status</option>
+                      <option value="PENDING">Pending</option>
+                      <option value="SCANNING">Scanning</option>
+                      <option value="CLEAN">Clean</option>
+                      <option value="INFECTED">Infected</option>
+                      <option value="FAILED">Failed</option>
+                    </select>
+                  </label>
+                  <label>
+                    <input value={searchExtension} onChange={(event) => setSearchExtension(event.target.value)} placeholder="Extension, e.g. pdf" />
+                  </label>
                 </div>
 
-                <div className="folder-grid repository-folder-grid" aria-label="Child folders">
-                  {(data?.folder?.children ?? []).map((folder) => (
-                    <article className="folder-card" key={folder.id}>
-                      <button type="button" onClick={() => void handleOpenFolder(folder.id)}>
-                        <FolderTree aria-hidden="true" size={20} />
-                        <span>
-                          <strong>{folder.name}</strong>
-                          <small>{folder.childFolderCount} folders · {folder.fileCount} files</small>
-                        </span>
-                      </button>
-                      <button className="row-icon-button" type="button" title={`Rename ${folder.name}`} onClick={() => openEditFolder(folder)}>
-                        <Pencil aria-hidden="true" size={14} />
-                      </button>
-                    </article>
-                  ))}
-                  {data && data.folder && data.folder.children.length === 0 ? <p className="empty-state">No child folders in this location.</p> : null}
+                <div className="repository-stats" aria-label="Repository summary">
+                  <span><strong>{repositoryFolders.length}</strong> folders</span>
+                  <span><strong>{repositoryFiles.length}</strong> {searchQuery.trim() ? "matching files" : "files"}</span>
+                  <span><strong>{formatBytes(repositoryFiles.reduce((total, file) => total + Number(file.currentVersion?.sizeBytes ?? 0), 0))}</strong> visible size</span>
+                  <span><strong>{titleCase(data?.dashboard.smtpStatus ?? "smtp")}</strong> SMTP</span>
                 </div>
 
-                <div className="repository-section-heading">
-                  <div>
-                    <h3>Files</h3>
-                    <p>{searchQuery.trim() ? "Filtered repository results" : "Documents stored in the selected folder"}</p>
-                  </div>
-                  <button className="row-text-button" type="button" onClick={() => setAccessModalOpen(true)}>
-                    <KeyRound aria-hidden="true" size={15} />
-                    Request Access
-                  </button>
-                </div>
-
-                <div className="data-table repository-file-table" role="table" aria-label="Repository files">
-                  <div className="table-row table-head" role="row">
-                    <span role="columnheader">Name</span>
-                    <span role="columnheader">Owner</span>
-                    <span role="columnheader">Class</span>
-                    <span role="columnheader">Scan</span>
-                    <span role="columnheader">Updated</span>
-                    <span role="columnheader">Actions</span>
-                  </div>
-                  {(data?.files ?? []).map((file) => (
-                    <div className="table-row" role="row" key={file.id}>
-                      <span role="cell" className="file-name">
-                        <FileText aria-hidden="true" size={16} />
-                        {file.originalName}
-                      </span>
-                      <span role="cell">{file.createdBy?.fullName ?? file.department?.name ?? "System"}</span>
-                      <span role="cell">
-                        <span className={`badge ${file.classification.toLowerCase()}`}>{titleCase(file.classification)}</span>
-                      </span>
-                      <span role="cell">
-                        <span className={`status ${file.currentVersion?.scanStatus.toLowerCase() ?? "pending"}`}>
-                          {titleCase(file.currentVersion?.scanStatus ?? "PENDING")}
-                        </span>
-                      </span>
-                      <span role="cell">{formatDate(file.updatedAt)}</span>
-                      <span role="cell" className="table-actions">
-                        <button
-                          className="row-icon-button"
-                          type="button"
-                          title={`Open ${file.originalName}`}
-                          onClick={() => void handleOpenFile(file)}
-                        >
-                          <FileText aria-hidden="true" size={15} />
-                        </button>
-                        <button
-                          className="row-icon-button"
-                          type="button"
-                          title={`Preview ${file.originalName}`}
-                          disabled={file.currentVersion?.scanStatus !== "CLEAN"}
-                          onClick={() => void handlePreviewFile(file)}
-                        >
-                          <Search aria-hidden="true" size={15} />
-                        </button>
-                        <button
-                          className="row-icon-button"
-                          type="button"
-                          title={`Download ${file.originalName}`}
-                          disabled={file.currentVersion?.scanStatus !== "CLEAN" || downloadingFileId === file.id}
-                          onClick={() => void handleDownload(file)}
-                        >
-                          <Download aria-hidden="true" size={15} />
-                        </button>
-                        <button
-                          className="row-icon-button danger"
-                          type="button"
-                          title={`Delete ${file.originalName}`}
-                          onClick={() => void handleDeleteFile(file)}
-                        >
-                          <XCircle aria-hidden="true" size={15} />
-                        </button>
-                      </span>
+                <div className="repository-browser">
+                  <div className="repository-section-heading">
+                    <div>
+                      <h3>Folders</h3>
+                      <p>{repositoryFolders.length} available in this location</p>
                     </div>
-                  ))}
-                  {data && data.files.length === 0 ? <p className="empty-state">No files match the current repository view.</p> : null}
+                    <button className="row-text-button" type="button" onClick={() => activateModule("recycle")}>
+                      <ArchiveRestore aria-hidden="true" size={15} />
+                      Recycle Bin
+                    </button>
+                  </div>
+
+                  <div className="repository-folder-grid" aria-label="Child folders">
+                    {repositoryFolders.map((folder) => (
+                      <article className="repository-folder-card" key={folder.id}>
+                        <button type="button" onClick={() => void handleOpenFolder(folder.id)}>
+                          <span className="repository-folder-icon"><FolderTree aria-hidden="true" size={22} /></span>
+                          <span>
+                            <strong>{folder.name}</strong>
+                            <small>{folder.childFolderCount} folders · {folder.fileCount} files</small>
+                          </span>
+                        </button>
+                        <button className="row-icon-button" type="button" title={`Rename ${folder.name}`} onClick={() => openEditFolder(folder)}>
+                          <Pencil aria-hidden="true" size={14} />
+                        </button>
+                      </article>
+                    ))}
+                    {data && data.folder && repositoryFolders.length === 0 ? <p className="empty-state">No child folders in this location.</p> : null}
+                  </div>
+
+                  <div className="repository-section-heading">
+                    <div>
+                      <h3>Files</h3>
+                      <p>{searchQuery.trim() ? "Filtered repository results" : "Documents stored in the selected folder"}</p>
+                    </div>
+                    <button className="row-text-button" type="button" onClick={() => setAccessModalOpen(true)}>
+                      <KeyRound aria-hidden="true" size={15} />
+                      Request Access
+                    </button>
+                  </div>
+
+                  {repositoryView === "grid" ? (
+                    <div className="repository-file-grid" aria-label="Repository files">
+                      {repositoryFiles.map((file) => (
+                        <article className="repository-file-card" key={file.id}>
+                          <button className="repository-file-card-main" type="button" onClick={() => void handleOpenFile(file)}>
+                            <span className="repository-file-icon">{fileExtension(file.originalName)}</span>
+                            <strong>{file.originalName}</strong>
+                            <small>{file.createdBy?.fullName ?? file.department?.name ?? "System"} · {formatDate(file.updatedAt)}</small>
+                          </button>
+                          <div className="repository-card-meta">
+                            <span className={`badge ${file.classification.toLowerCase()}`}>{titleCase(file.classification)}</span>
+                            <span className={`status ${file.currentVersion?.scanStatus.toLowerCase() ?? "pending"}`}>
+                              {titleCase(file.currentVersion?.scanStatus ?? "PENDING")}
+                            </span>
+                          </div>
+                          <div className="repository-card-actions">
+                            <span>{file.currentVersion ? formatBytes(Number(file.currentVersion.sizeBytes)) : "0 B"}</span>
+                            <div className="table-actions">
+                              <button className="row-icon-button" type="button" title={`Preview ${file.originalName}`} disabled={file.currentVersion?.scanStatus !== "CLEAN"} onClick={() => void handlePreviewFile(file)}>
+                                <Search aria-hidden="true" size={15} />
+                              </button>
+                              <button className="row-icon-button" type="button" title={`Download ${file.originalName}`} disabled={file.currentVersion?.scanStatus !== "CLEAN" || downloadingFileId === file.id} onClick={() => void handleDownload(file)}>
+                                <Download aria-hidden="true" size={15} />
+                              </button>
+                              <button className="row-icon-button danger" type="button" title={`Delete ${file.originalName}`} onClick={() => void handleDeleteFile(file)}>
+                                <XCircle aria-hidden="true" size={15} />
+                              </button>
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+                      {data && repositoryFiles.length === 0 ? <p className="empty-state">No files match the current repository view.</p> : null}
+                    </div>
+                  ) : (
+                    <div className="data-table repository-file-table" role="table" aria-label="Repository files">
+                      <div className="table-row table-head" role="row">
+                        <span role="columnheader">Name</span>
+                        <span role="columnheader">Owner</span>
+                        <span role="columnheader">Size</span>
+                        <span role="columnheader">Class</span>
+                        <span role="columnheader">Scan</span>
+                        <span role="columnheader">Updated</span>
+                        <span role="columnheader">Actions</span>
+                      </div>
+                      {repositoryFiles.map((file) => (
+                        <div className="table-row" role="row" key={file.id}>
+                          <span role="cell" className="file-name">
+                            <span className="repository-file-icon compact">{fileExtension(file.originalName)}</span>
+                            {file.originalName}
+                          </span>
+                          <span role="cell">{file.createdBy?.fullName ?? file.department?.name ?? "System"}</span>
+                          <span role="cell">{file.currentVersion ? formatBytes(Number(file.currentVersion.sizeBytes)) : "0 B"}</span>
+                          <span role="cell">
+                            <span className={`badge ${file.classification.toLowerCase()}`}>{titleCase(file.classification)}</span>
+                          </span>
+                          <span role="cell">
+                            <span className={`status ${file.currentVersion?.scanStatus.toLowerCase() ?? "pending"}`}>
+                              {titleCase(file.currentVersion?.scanStatus ?? "PENDING")}
+                            </span>
+                          </span>
+                          <span role="cell">{formatDate(file.updatedAt)}</span>
+                          <span role="cell" className="table-actions">
+                            <button className="row-icon-button" type="button" title={`Open ${file.originalName}`} onClick={() => void handleOpenFile(file)}>
+                              <FileText aria-hidden="true" size={15} />
+                            </button>
+                            <button className="row-icon-button" type="button" title={`Preview ${file.originalName}`} disabled={file.currentVersion?.scanStatus !== "CLEAN"} onClick={() => void handlePreviewFile(file)}>
+                              <Search aria-hidden="true" size={15} />
+                            </button>
+                            <button className="row-icon-button" type="button" title={`Download ${file.originalName}`} disabled={file.currentVersion?.scanStatus !== "CLEAN" || downloadingFileId === file.id} onClick={() => void handleDownload(file)}>
+                              <Download aria-hidden="true" size={15} />
+                            </button>
+                            <button className="row-icon-button danger" type="button" title={`Delete ${file.originalName}`} onClick={() => void handleDeleteFile(file)}>
+                              <XCircle aria-hidden="true" size={15} />
+                            </button>
+                          </span>
+                        </div>
+                      ))}
+                      {data && repositoryFiles.length === 0 ? <p className="empty-state">No files match the current repository view.</p> : null}
+                    </div>
+                  )}
                 </div>
               </article>
             </section>
