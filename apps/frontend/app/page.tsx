@@ -112,10 +112,13 @@ type Dashboard = {
 
 type HealthResponse = {
   status: string;
+  generatedAt?: string;
   checks: Array<{
     name: string;
     status: string;
     detail: string;
+    latencyMs?: number;
+    meta?: Record<string, unknown> | null;
   }>;
 };
 
@@ -559,6 +562,30 @@ function titleCase(value: string) {
     .join(" ");
 }
 
+function summarizeOperationResult(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return "Operation completed.";
+  }
+
+  const result = value as Record<string, unknown>;
+  const parts = [
+    ["Processed", result.processed],
+    ["Queued", result.queued],
+    ["Completed", result.completed],
+    ["Failed", result.failed],
+    ["Indexed", result.indexed],
+    ["Skipped", result.skipped],
+    ["Files", result.files],
+    ["Folders", result.folders],
+    ["Destination", result.destination],
+    ["Path", result.path]
+  ]
+    .filter(([, item]) => item !== undefined && item !== null && item !== "")
+    .map(([label, item]) => `${label}: ${String(item)}`);
+
+  return parts.length ? parts.join(" · ") : "Operation completed.";
+}
+
 function fileExtension(fileName: string) {
   const index = fileName.lastIndexOf(".");
 
@@ -811,6 +838,9 @@ export default function Home() {
   const [smtpSaving, setSmtpSaving] = useState(false);
   const [smtpTesting, setSmtpTesting] = useState(false);
   const [smtpMessage, setSmtpMessage] = useState<string | null>(null);
+  const [healthActionRunning, setHealthActionRunning] = useState<string | null>(null);
+  const [healthActionMessage, setHealthActionMessage] = useState<string | null>(null);
+  const [healthScanLimit, setHealthScanLimit] = useState("25");
   const [error, setError] = useState<string | null>(null);
 
   function clearSession(message?: string) {
@@ -1427,6 +1457,61 @@ export default function Home() {
     } finally {
       setUploading(false);
     }
+  }
+
+  async function runHealthOperation(
+    operationKey: string,
+    successPrefix: string,
+    request: () => Promise<unknown>
+  ) {
+    if (!token) {
+      setError("Please sign in before using system operations.");
+      return;
+    }
+
+    setHealthActionRunning(operationKey);
+    setHealthActionMessage(null);
+    setError(null);
+
+    try {
+      const result = await request();
+      setHealthActionMessage(`${successPrefix}: ${summarizeOperationResult(result)}`);
+      await loadDashboard(token, searchQuery, activeFolderId, undefined, undefined, "health");
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Operation failed";
+      setHealthActionMessage(message);
+      setError(message);
+    } finally {
+      setHealthActionRunning(null);
+    }
+  }
+
+  async function handleRunHealthScans() {
+    const parsedLimit = Number(healthScanLimit);
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(Math.floor(parsedLimit), 100) : 25;
+
+    await runHealthOperation("scan", "Pending scan run finished", () =>
+      apiRequest("/admin/scans/run-pending", token ?? undefined, {
+        method: "POST",
+        body: JSON.stringify({ limit })
+      })
+    );
+  }
+
+  async function handleReindexSearch() {
+    await runHealthOperation("reindex", "Search reindex finished", () =>
+      apiRequest("/admin/search/reindex", token ?? undefined, {
+        method: "POST"
+      })
+    );
+  }
+
+  async function handleRunBackup() {
+    await runHealthOperation("backup", "Manual backup finished", () =>
+      apiRequest("/admin/backup/run", token ?? undefined, {
+        method: "POST"
+      })
+    );
   }
 
   async function handleDownload(file: RepositoryFile) {
@@ -3005,25 +3090,101 @@ export default function Home() {
           ) : null}
 
           {activeModule === "health" && moduleAccess.health ? (
-            <section className="panel">
-              <div className="panel-header">
-                <div>
-                  <h2>System Health</h2>
-                  <p>{data?.health.status ?? "loading"}</p>
-                </div>
-                <button className="text-button" type="button" onClick={() => void loadDashboard(token)}>
-                  <RefreshCcw aria-hidden="true" size={15} />
-                  Refresh
-                </button>
-              </div>
-              <div className="health-list module-health-list">
-                {(data?.health.checks ?? []).map((item) => (
-                  <div className="health-item" key={item.name}>
-                    <span><Database size={16} /> {titleCase(item.name)}</span>
-                    <strong className={`health-state ${item.status}`}>{titleCase(item.status)}</strong>
+            <section className="health-console">
+              <section className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>System Health</h2>
+                    <p>
+                      {titleCase(data?.health.status ?? "loading")}
+                      {data?.health.generatedAt ? ` · Checked ${formatDate(data.health.generatedAt)}` : ""}
+                    </p>
                   </div>
-                ))}
-              </div>
+                  <div className="panel-actions">
+                    <button className="text-button" type="button" onClick={() => void loadDashboard(token, searchQuery, activeFolderId, undefined, undefined, "health")}>
+                      <RefreshCcw aria-hidden="true" size={15} />
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div className="health-card-grid">
+                  {(data?.health.checks ?? []).map((item) => (
+                    <article className={`health-card health-card-${item.status}`} key={item.name}>
+                      <div>
+                        <span className="health-card-icon"><Database aria-hidden="true" size={17} /></span>
+                        <strong>{titleCase(item.name)}</strong>
+                      </div>
+                      <p>{item.detail}</p>
+                      <footer>
+                        <span className={`health-state ${item.status}`}>{titleCase(item.status)}</span>
+                        <span>{typeof item.latencyMs === "number" ? `${item.latencyMs} ms` : "No latency"}</span>
+                      </footer>
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>Operations</h2>
+                    <p>Run maintenance jobs and refresh platform readiness from one place.</p>
+                  </div>
+                </div>
+
+                {canWriteUsers ? (
+                  <div className="health-operation-grid">
+                    <article>
+                      <div>
+                        <ShieldCheck aria-hidden="true" size={18} />
+                        <strong>Antivirus Scan Queue</strong>
+                        <span>Process files waiting for malware scan.</span>
+                      </div>
+                      <label>
+                        <span>Limit</span>
+                        <input
+                          min="1"
+                          max="100"
+                          type="number"
+                          value={healthScanLimit}
+                          onChange={(event) => setHealthScanLimit(event.target.value)}
+                        />
+                      </label>
+                      <button className="secondary-button" type="button" disabled={healthActionRunning !== null} onClick={() => void handleRunHealthScans()}>
+                        <RefreshCcw aria-hidden="true" size={16} />
+                        {healthActionRunning === "scan" ? "Running..." : "Run Scans"}
+                      </button>
+                    </article>
+                    <article>
+                      <div>
+                        <Search aria-hidden="true" size={18} />
+                        <strong>Search Index</strong>
+                        <span>Rebuild file search metadata for repository discovery.</span>
+                      </div>
+                      <button className="secondary-button" type="button" disabled={healthActionRunning !== null} onClick={() => void handleReindexSearch()}>
+                        <RefreshCcw aria-hidden="true" size={16} />
+                        {healthActionRunning === "reindex" ? "Running..." : "Reindex"}
+                      </button>
+                    </article>
+                    <article>
+                      <div>
+                        <ArchiveRestore aria-hidden="true" size={18} />
+                        <strong>Manual Backup</strong>
+                        <span>Create an on-demand backup using the configured destination.</span>
+                      </div>
+                      <button className="primary-button" type="button" disabled={healthActionRunning !== null} onClick={() => void handleRunBackup()}>
+                        <Upload aria-hidden="true" size={16} />
+                        {healthActionRunning === "backup" ? "Running..." : "Run Backup"}
+                      </button>
+                    </article>
+                  </div>
+                ) : (
+                  <p className="empty-state">Operational actions require Super Admin permission.</p>
+                )}
+
+                {healthActionMessage ? <p className="form-message">{healthActionMessage}</p> : null}
+              </section>
             </section>
           ) : null}
 
