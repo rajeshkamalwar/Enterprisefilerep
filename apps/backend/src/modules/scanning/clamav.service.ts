@@ -15,7 +15,7 @@ export class ClamavService {
   private readonly timeoutMs = Number(process.env.CLAMAV_TIMEOUT_MS ?? 30_000);
 
   ping() {
-    return this.sendCommand("zPING\0");
+    return this.sendCommand("PING\n");
   }
 
   scanFile(filePath: string): Promise<ClamavScanResult> {
@@ -90,9 +90,10 @@ export class ClamavService {
       socket.once("error", reject);
       socket.on("data", (chunk: Buffer) => {
         response += chunk.toString("utf8");
+        socket.end();
       });
       socket.once("close", () => resolve(this.normalizeResponse(response)));
-      socket.connect(this.port, this.host, () => socket.end(command));
+      socket.connect(this.port, this.host, () => socket.write(command));
     });
   }
 
