@@ -455,6 +455,14 @@ class ApiError extends Error {
   }
 }
 
+function displayError(caught: unknown) {
+  if (caught instanceof Error && caught.message === "Failed to fetch") {
+    return "Unable to reach the API service. Please check that the backend is running on port 4000.";
+  }
+
+  return caught instanceof Error ? caught.message : "Unable to load dashboard data";
+}
+
 function formatNumber(value: number) {
   return new Intl.NumberFormat("en-IN").format(value);
 }
@@ -682,6 +690,7 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [repositoryDragActive, setRepositoryDragActive] = useState(false);
+  const [repositoryMenuId, setRepositoryMenuId] = useState<string | null>(null);
   const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<RepositoryFile | null>(null);
   const [fileDetailOpen, setFileDetailOpen] = useState(false);
@@ -1020,7 +1029,14 @@ export default function Home() {
         return;
       }
 
-      setError(caught instanceof Error ? caught.message : "Unable to load dashboard data");
+      const message = displayError(caught);
+      if (message.startsWith("Unable to reach the API service") && data) {
+        setError(null);
+        setUploadMessage("Could not refresh right now. Showing the last loaded repository data.");
+        return;
+      }
+
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -2290,20 +2306,30 @@ export default function Home() {
                         </button>
                         <span className="repository-simple-meta">Folder</span>
                         <span className="repository-simple-meta">--</span>
-                        <details className="repository-more-menu">
+                        <details
+                          className="repository-more-menu"
+                          open={repositoryMenuId === `folder:${folder.id}`}
+                          onToggle={(event) => {
+                            if (event.currentTarget.open) {
+                              setRepositoryMenuId(`folder:${folder.id}`);
+                            } else if (repositoryMenuId === `folder:${folder.id}`) {
+                              setRepositoryMenuId(null);
+                            }
+                          }}
+                        >
                           <summary title={`More actions for ${folder.name}`}>
                             <MoreHorizontal aria-hidden="true" size={17} />
                           </summary>
                           <div>
-                            <button type="button" onClick={() => void handleOpenFolder(folder.id)}>
+                            <button type="button" onClick={() => { setRepositoryMenuId(null); void handleOpenFolder(folder.id); }}>
                               <FolderTree aria-hidden="true" size={15} />
                               Open
                             </button>
-                            <button type="button" onClick={() => openEditFolder(folder)}>
+                            <button type="button" onClick={() => { setRepositoryMenuId(null); openEditFolder(folder); }}>
                               <Pencil aria-hidden="true" size={15} />
                               Rename
                             </button>
-                            <button className="danger" type="button" onClick={() => void handleDeleteFolder(folder)}>
+                            <button className="danger" type="button" onClick={() => { setRepositoryMenuId(null); void handleDeleteFolder(folder); }}>
                               <XCircle aria-hidden="true" size={15} />
                               Delete
                             </button>
@@ -2327,24 +2353,34 @@ export default function Home() {
                         </button>
                         <span className="repository-simple-meta">{file.currentVersion ? formatBytes(Number(file.currentVersion.sizeBytes)) : "0 B"}</span>
                         <span className="repository-simple-meta">{file.createdBy?.fullName ?? file.department?.name ?? "System"}</span>
-                        <details className="repository-more-menu">
+                        <details
+                          className="repository-more-menu"
+                          open={repositoryMenuId === `file:${file.id}`}
+                          onToggle={(event) => {
+                            if (event.currentTarget.open) {
+                              setRepositoryMenuId(`file:${file.id}`);
+                            } else if (repositoryMenuId === `file:${file.id}`) {
+                              setRepositoryMenuId(null);
+                            }
+                          }}
+                        >
                           <summary title={`More actions for ${file.originalName}`}>
                             <MoreHorizontal aria-hidden="true" size={17} />
                           </summary>
                           <div>
-                            <button type="button" onClick={() => void handleOpenFile(file)}>
+                            <button type="button" onClick={() => { setRepositoryMenuId(null); void handleOpenFile(file); }}>
                               <FileText aria-hidden="true" size={15} />
                               View
                             </button>
-                            <button type="button" disabled={file.currentVersion?.scanStatus !== "CLEAN"} onClick={() => void handlePreviewFile(file)}>
+                            <button type="button" disabled={file.currentVersion?.scanStatus !== "CLEAN"} onClick={() => { setRepositoryMenuId(null); void handlePreviewFile(file); }}>
                               <Search aria-hidden="true" size={15} />
                               Preview
                             </button>
-                            <button type="button" disabled={file.currentVersion?.scanStatus !== "CLEAN" || downloadingFileId === file.id} onClick={() => void handleDownload(file)}>
+                            <button type="button" disabled={file.currentVersion?.scanStatus !== "CLEAN" || downloadingFileId === file.id} onClick={() => { setRepositoryMenuId(null); void handleDownload(file); }}>
                               <Download aria-hidden="true" size={15} />
                               Download
                             </button>
-                            <button className="danger" type="button" onClick={() => void handleDeleteFile(file)}>
+                            <button className="danger" type="button" onClick={() => { setRepositoryMenuId(null); void handleDeleteFile(file); }}>
                               <XCircle aria-hidden="true" size={15} />
                               Delete
                             </button>
