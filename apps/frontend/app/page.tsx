@@ -667,7 +667,7 @@ export default function Home() {
   const [searchScanStatus, setSearchScanStatus] = useState("");
   const [searchExtension, setSearchExtension] = useState("");
   const [repositorySort, setRepositorySort] = useState<RepositorySort>("updated-desc");
-  const [repositoryViewMode, setRepositoryViewMode] = useState<RepositoryViewMode>("list");
+  const [repositoryViewMode, setRepositoryViewMode] = useState<RepositoryViewMode>("grid");
   const [auditQuery, setAuditQuery] = useState("");
   const [auditAction, setAuditAction] = useState("");
   const [auditSuccess, setAuditSuccess] = useState("all");
