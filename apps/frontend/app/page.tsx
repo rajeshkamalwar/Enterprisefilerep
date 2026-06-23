@@ -127,6 +127,15 @@ type AppData = {
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
+class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message);
+  }
+}
+
 function formatNumber(value: number) {
   return new Intl.NumberFormat("en-IN").format(value);
 }
@@ -177,7 +186,16 @@ async function apiRequest<T>(path: string, token?: string, init: RequestInit = {
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Request failed: ${response.status}`);
+    let message = text || `Request failed: ${response.status}`;
+
+    try {
+      const parsed = JSON.parse(text) as { message?: string; error?: string };
+      message = parsed.message ?? parsed.error ?? message;
+    } catch {
+      // Keep the plain response text when the server does not return JSON.
+    }
+
+    throw new ApiError(message, response.status);
   }
 
   return response.json() as Promise<T>;
@@ -248,6 +266,16 @@ export default function Home() {
         files: fileSearch.data
       });
     } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 401) {
+        window.localStorage.removeItem("filerepo.token");
+        window.localStorage.removeItem("filerepo.user");
+        setToken(null);
+        setUser(null);
+        setData(null);
+        setError("Session expired. Please sign in again.");
+        return;
+      }
+
       setError(caught instanceof Error ? caught.message : "Unable to load dashboard data");
     } finally {
       setLoading(false);
