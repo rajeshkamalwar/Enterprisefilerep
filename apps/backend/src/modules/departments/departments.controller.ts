@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser, AuthGuard } from "../auth/auth.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { RequirePermissions } from "../rbac/permissions.decorator";
@@ -69,5 +69,11 @@ export class DepartmentsController {
       status: body.status,
       actor
     });
+  }
+
+  @Delete(":id")
+  @RequirePermissions("settings.update")
+  delete(@Param("id") id: string, @CurrentUser() actor: AuthenticatedUser) {
+    return this.departments.delete(id, actor);
   }
 }

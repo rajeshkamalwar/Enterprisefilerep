@@ -211,6 +211,55 @@ export class DepartmentsService {
     return this.serializeDepartment(updated, storage[0]);
   }
 
+  async delete(id: string, actor: AuthenticatedUser) {
+    const existing = await this.prisma.department.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            users: true,
+            groups: true,
+            folders: true,
+            files: true
+          }
+        }
+      }
+    });
+
+    if (!existing) {
+      throw new NotFoundException("Department not found");
+    }
+
+    const usageCount = existing._count.users + existing._count.groups + existing._count.folders + existing._count.files;
+    if (usageCount > 0) {
+      throw new ConflictException("Department has users, groups, folders, or files. Disable it instead of deleting.");
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.department.delete({
+        where: { id }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "DEPARTMENT_DELETED",
+          entityType: "department",
+          entityId: existing.id,
+          entityName: existing.name,
+          oldValueJson: {
+            name: existing.name,
+            code: existing.code,
+            status: existing.status,
+            storageQuotaBytes: existing.storageQuotaBytes?.toString() ?? null
+          }
+        }
+      });
+    });
+
+    return { deleted: true, id };
+  }
+
   private async ensureUniqueDepartment(input: { name: string; code: string; excludeId?: string }) {
     const existing = await this.prisma.department.findFirst({
       where: {

@@ -786,6 +786,7 @@ export default function Home() {
   const [userStatusUpdatingId, setUserStatusUpdatingId] = useState<string | null>(null);
   const [departmentModalOpen, setDepartmentModalOpen] = useState(false);
   const [editingDepartment, setEditingDepartment] = useState<ManagedDepartment | null>(null);
+  const [viewingDepartment, setViewingDepartment] = useState<ManagedDepartment | null>(null);
   const [departmentName, setDepartmentName] = useState("");
   const [departmentCode, setDepartmentCode] = useState("");
   const [departmentDescription, setDepartmentDescription] = useState("");
@@ -794,6 +795,7 @@ export default function Home() {
   const [departmentSaving, setDepartmentSaving] = useState(false);
   const [departmentMessage, setDepartmentMessage] = useState<string | null>(null);
   const [departmentStatusUpdatingId, setDepartmentStatusUpdatingId] = useState<string | null>(null);
+  const [departmentDeletingId, setDepartmentDeletingId] = useState<string | null>(null);
   const [smtpHost, setSmtpHost] = useState("");
   const [smtpPort, setSmtpPort] = useState("587");
   const [smtpUsername, setSmtpUsername] = useState("");
@@ -2120,6 +2122,38 @@ export default function Home() {
     }
   }
 
+  async function handleDeleteDepartment(target: ManagedDepartment) {
+    if (!token) {
+      setError("Please sign in before managing departments.");
+      return;
+    }
+
+    const usageCount = target.userCount + target.folderCount + target.fileCount;
+    if (usageCount > 0) {
+      setDepartmentMessage("Department is in use. Disable it instead of deleting.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete department ${target.name}? This cannot be undone.`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDepartmentDeletingId(target.id);
+    setDepartmentMessage(null);
+    setError(null);
+
+    try {
+      await apiRequest(`/departments/${target.id}`, token, { method: "DELETE" });
+      await loadDashboard(token, searchQuery, activeFolderId, undefined, undefined, "departments");
+      setDepartmentMessage("Department deleted.");
+    } catch (caught) {
+      setDepartmentMessage(caught instanceof Error ? caught.message : "Unable to delete department");
+    } finally {
+      setDepartmentDeletingId(null);
+    }
+  }
+
   if (!token || !user) {
     return (
       <main className="login-shell">
@@ -2832,6 +2866,9 @@ export default function Home() {
                       <span className={`status ${department.status.toLowerCase()}`}>{titleCase(department.status)}</span>
                     </span>
                     <span role="cell" className="user-actions">
+                      <button className="row-text-button" type="button" onClick={() => setViewingDepartment(department)}>
+                        View
+                      </button>
                       <button className="row-text-button" type="button" onClick={() => openEditDepartment(department)}>
                         Edit
                       </button>
@@ -2842,6 +2879,15 @@ export default function Home() {
                         onClick={() => void handleDepartmentStatus(department, department.status === "ACTIVE" ? "INACTIVE" : "ACTIVE")}
                       >
                         {department.status === "ACTIVE" ? "Disable" : "Activate"}
+                      </button>
+                      <button
+                        className="row-text-button danger"
+                        type="button"
+                        disabled={departmentDeletingId === department.id || department.userCount + department.folderCount + department.fileCount > 0}
+                        title={department.userCount + department.folderCount + department.fileCount > 0 ? "Disable departments that already have users, folders, or files" : "Delete department"}
+                        onClick={() => void handleDeleteDepartment(department)}
+                      >
+                        Delete
                       </button>
                     </span>
                   </div>
@@ -3826,6 +3872,52 @@ export default function Home() {
                 </button>
               </div>
             </form>
+          </section>
+        </div>
+      ) : null}
+
+      {viewingDepartment ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel wide-modal" aria-label="Department details">
+            <div className="panel-header">
+              <div>
+                <h2>{viewingDepartment.name}</h2>
+                <p>{viewingDepartment.code}</p>
+              </div>
+              <button className="text-button" type="button" onClick={() => setViewingDepartment(null)}>
+                Close
+              </button>
+            </div>
+
+            <div className="module-status-grid">
+              <article><strong>Status</strong><span>{titleCase(viewingDepartment.status)}</span></article>
+              <article><strong>Users</strong><span>{formatNumber(viewingDepartment.userCount)}</span></article>
+              <article><strong>Folders</strong><span>{formatNumber(viewingDepartment.folderCount)}</span></article>
+              <article><strong>Files</strong><span>{formatNumber(viewingDepartment.fileCount)}</span></article>
+              <article><strong>Storage</strong><span>{formatBytes(Number(viewingDepartment.storageUsedBytes))}</span></article>
+              <article>
+                <strong>Quota</strong>
+                <span>
+                  {viewingDepartment.storageQuotaBytes
+                    ? `${viewingDepartment.quotaUsedPercent ?? 0}% of ${formatBytes(Number(viewingDepartment.storageQuotaBytes))}`
+                    : "No quota"}
+                </span>
+              </article>
+            </div>
+
+            <div className="modal-actions">
+              <button className="secondary-button" type="button" onClick={() => { setViewingDepartment(null); openEditDepartment(viewingDepartment); }}>
+                Edit
+              </button>
+              <button
+                className="secondary-button danger"
+                type="button"
+                disabled={viewingDepartment.userCount + viewingDepartment.folderCount + viewingDepartment.fileCount > 0}
+                onClick={() => void handleDeleteDepartment(viewingDepartment)}
+              >
+                Delete
+              </button>
+            </div>
           </section>
         </div>
       ) : null}

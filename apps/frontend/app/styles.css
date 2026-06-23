@@ -4157,6 +4157,16 @@ h1 {
   white-space: nowrap;
 }
 
+.row-text-button.danger {
+  color: var(--danger);
+}
+
+.row-text-button.danger:hover:not(:disabled) {
+  border-color: var(--danger-soft);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
 .user-grid {
   border: 1px solid var(--border);
   border-radius: 8px;
