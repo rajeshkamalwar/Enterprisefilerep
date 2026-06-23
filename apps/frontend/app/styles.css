@@ -1379,6 +1379,150 @@ textarea:focus-visible {
 }
 
 .repository-module {
+  --fmcc-primary: #5ebfe3;
+  --fmcc-primary-soft: #edf8fc;
+  --fmcc-text: #4d4f5c;
+  --fmcc-muted: #818e94;
+  --fmcc-border: #e8edf2;
+}
+
+.repository-module .repository-panel {
+  border-color: var(--fmcc-border);
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(77, 79, 92, 0.06);
+}
+
+.repository-module .repository-workbench {
+  border-bottom-color: var(--fmcc-border);
+  background: #ffffff;
+}
+
+.repository-module .repository-location .eyebrow {
+  color: var(--fmcc-primary);
+}
+
+.repository-module .repository-location h2 {
+  color: var(--fmcc-text);
+  font-size: 21px;
+}
+
+.repository-module .repository-location p,
+.repository-module .breadcrumb-list button,
+.repository-module .repository-simple-main small,
+.repository-module .repository-simple-meta {
+  color: var(--fmcc-muted);
+}
+
+.repository-module .repository-actions .secondary-button,
+.repository-module .repository-simple-toolbar .row-text-button,
+.repository-module .repository-simple-toolbar > span,
+.repository-module .repository-simple-toolbar label {
+  border-color: var(--fmcc-border);
+  background: #ffffff;
+  color: var(--fmcc-text);
+}
+
+.repository-module .repository-actions .primary-button,
+.repository-module .repository-simple-search .primary-button {
+  background: var(--fmcc-primary);
+  border-color: var(--fmcc-primary);
+  color: #ffffff;
+}
+
+.repository-module .repository-simple-search label {
+  height: 42px;
+  border-color: var(--fmcc-border);
+  background: #f8fbfd;
+}
+
+.repository-module .repository-simple-search input {
+  color: var(--fmcc-text);
+  font-weight: 600;
+}
+
+.repository-module .repository-advanced {
+  border-color: var(--fmcc-border);
+  background: #fbfdfe;
+}
+
+.repository-module .repository-advanced summary {
+  color: var(--fmcc-muted);
+}
+
+.repository-module .repository-simple-list {
+  gap: 0;
+  border: 1px solid var(--fmcc-border);
+  border-radius: var(--radius);
+  overflow: visible;
+  background: #ffffff;
+}
+
+.repository-module .repository-simple-item {
+  min-height: 58px;
+  border: 0;
+  border-bottom: 1px solid var(--fmcc-border);
+  border-radius: 0;
+  background: #ffffff;
+}
+
+.repository-module .repository-simple-item:last-child {
+  border-bottom: 0;
+}
+
+.repository-module .repository-simple-item:hover {
+  border-color: var(--fmcc-border);
+  background: #f8fcfe;
+  transform: none;
+}
+
+.repository-module .repository-simple-main strong {
+  color: var(--fmcc-text);
+  font-weight: 700;
+}
+
+.repository-module .repository-folder-icon {
+  width: 34px;
+  height: 34px;
+  background: transparent;
+  color: var(--fmcc-primary);
+}
+
+.repository-module .repository-file-thumb {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.repository-module .repository-file-thumb img {
+  display: block;
+  max-width: 28px;
+  max-height: 30px;
+}
+
+.repository-module .repository-more-menu summary {
+  color: var(--fmcc-muted);
+}
+
+.repository-module .repository-more-menu[open] summary,
+.repository-module .repository-more-menu summary:hover {
+  border-color: rgba(94, 191, 227, 0.28);
+  background: var(--fmcc-primary-soft);
+  color: var(--fmcc-primary);
+}
+
+.repository-module .repository-more-menu > div {
+  border-color: var(--fmcc-border);
+}
+
+.repository-module .repository-more-menu > div button:hover:not(:disabled) {
+  background: var(--fmcc-primary-soft);
+  color: var(--fmcc-primary);
+}
+
+.repository-module {
   display: grid;
   gap: 16px;
 }

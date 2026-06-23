@@ -497,6 +497,36 @@ function fileExtension(fileName: string) {
   return index > -1 ? fileName.slice(index + 1).toUpperCase() : "FILE";
 }
 
+function fileThumbnail(fileName: string) {
+  const extension = fileExtension(fileName).toLowerCase();
+  const thumbnails: Record<string, string> = {
+    doc: "word.png",
+    docx: "word.png",
+    xls: "excel.png",
+    xlsx: "excel.png",
+    csv: "csv.png",
+    ppt: "ppt.png",
+    pptx: "ppt.png",
+    pdf: "pdf.png",
+    png: "image.png",
+    jpg: "image.png",
+    jpeg: "image.png",
+    gif: "image.png",
+    webp: "image.png",
+    mp3: "audio.png",
+    wav: "audio.png",
+    mp4: "video.png",
+    mov: "video.png",
+    zip: "zip.png",
+    rar: "zip.png",
+    json: "json.png",
+    sql: "sql.png",
+    txt: "text.png"
+  };
+
+  return `/fmcc-thumbnails/${thumbnails[extension] ?? "unknow_file.png"}`;
+}
+
 function auditPath(filters: AuditFilters) {
   const params = new URLSearchParams({ pageSize: "20" });
 
@@ -2094,7 +2124,9 @@ export default function Home() {
                   {repositoryFiles.map((file) => (
                     <article className="repository-simple-item" key={file.id}>
                       <button className="repository-simple-main" type="button" onClick={() => void handleOpenFile(file)}>
-                        <span className="repository-file-icon compact">{fileExtension(file.originalName)}</span>
+                        <span className="repository-file-thumb">
+                          <img src={fileThumbnail(file.originalName)} alt="" />
+                        </span>
                         <span>
                           <strong>{file.originalName}</strong>
                           <small>
