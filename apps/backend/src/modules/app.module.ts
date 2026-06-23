@@ -8,6 +8,8 @@ import { AuthController } from "./auth/auth.controller";
 import { AuthGuard } from "./auth/auth.guard";
 import { AuthService } from "./auth/auth.service";
 import { DatabaseModule } from "./database/database.module";
+import { DepartmentsController } from "./departments/departments.controller";
+import { DepartmentsService } from "./departments/departments.service";
 import { FilesController } from "./repository/files.controller";
 import { FoldersController } from "./repository/folders.controller";
 import { HealthController } from "./health/health.controller";
@@ -39,6 +41,7 @@ import { UsersService } from "./users/users.service";
     AccessRequestsController,
     AdminController,
     AuthController,
+    DepartmentsController,
     FilesController,
     FoldersController,
     HealthController,
@@ -52,6 +55,7 @@ import { UsersService } from "./users/users.service";
     AuthGuard,
     AuthService,
     ClamavService,
+    DepartmentsService,
     EmailQueueService,
     HealthService,
     LocalStorageService,

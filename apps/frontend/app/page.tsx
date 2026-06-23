@@ -130,6 +130,7 @@ type AppData = {
   approvalRequests: AccessRequest[];
   managedUsers: ManagedUser[];
   userOptions: UserOptions;
+  departments: ManagedDepartment[];
 };
 
 type UploadResult = RepositoryFile & {
@@ -189,6 +190,21 @@ type UserOptions = {
   }>;
 };
 
+type ManagedDepartment = {
+  id: string;
+  name: string;
+  code: string;
+  description: string | null;
+  storageQuotaBytes: string | null;
+  storageUsedBytes: string;
+  quotaUsedPercent: number | null;
+  status: string;
+  userCount: number;
+  folderCount: number;
+  fileCount: number;
+  createdAt: string;
+};
+
 const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
 const emptyDashboard: Dashboard = {
@@ -235,6 +251,30 @@ function formatBytes(value: number) {
   }
 
   return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+}
+
+function bytesStringToGb(value: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  return (Number(value) / 1024 / 1024 / 1024).toFixed(2).replace(/\.?0+$/, "");
+}
+
+function gbInputToBytes(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  const gb = Number(trimmed);
+
+  if (!Number.isFinite(gb) || gb < 0) {
+    throw new Error("Storage quota must be a non-negative number.");
+  }
+
+  return Math.round(gb * 1024 * 1024 * 1024).toString();
 }
 
 function formatDate(value: string) {
@@ -344,6 +384,16 @@ export default function Home() {
   const [userSaving, setUserSaving] = useState(false);
   const [userMessage, setUserMessage] = useState<string | null>(null);
   const [userStatusUpdatingId, setUserStatusUpdatingId] = useState<string | null>(null);
+  const [departmentModalOpen, setDepartmentModalOpen] = useState(false);
+  const [editingDepartment, setEditingDepartment] = useState<ManagedDepartment | null>(null);
+  const [departmentName, setDepartmentName] = useState("");
+  const [departmentCode, setDepartmentCode] = useState("");
+  const [departmentDescription, setDepartmentDescription] = useState("");
+  const [departmentQuotaGb, setDepartmentQuotaGb] = useState("");
+  const [departmentStatus, setDepartmentStatus] = useState("ACTIVE");
+  const [departmentSaving, setDepartmentSaving] = useState(false);
+  const [departmentMessage, setDepartmentMessage] = useState<string | null>(null);
+  const [departmentStatusUpdatingId, setDepartmentStatusUpdatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -378,6 +428,7 @@ export default function Home() {
   const canApproveAccess = Boolean(user?.roles.some((role) => role === "SUPER_ADMIN" || role === "DEPARTMENT_ADMIN"));
   const canReadUsers = canApproveAccess;
   const canWriteUsers = Boolean(user?.roles.includes("SUPER_ADMIN"));
+  const canManageDepartments = Boolean(user?.roles.includes("SUPER_ADMIN"));
 
   async function loadDashboard(activeToken: string, query = searchQuery) {
     setLoading(true);
@@ -392,7 +443,17 @@ export default function Home() {
         throw caught;
       });
 
-      const [dashboard, health, roots, fileSearch, myAccessRequests, approvalRequests, managedUsers, userOptions] = await Promise.all([
+      const [
+        dashboard,
+        health,
+        roots,
+        fileSearch,
+        myAccessRequests,
+        approvalRequests,
+        managedUsers,
+        userOptions,
+        departments
+      ] = await Promise.all([
         dashboardRequest,
         apiRequest<HealthResponse>("/health"),
         apiRequest<{ data: FolderSummary[] }>("/folders", activeToken),
@@ -402,7 +463,8 @@ export default function Home() {
           ? apiRequest<{ data: AccessRequest[] }>("/access-requests?status=PENDING&pageSize=5", activeToken)
           : Promise.resolve({ data: [] }),
         canReadUsers ? apiRequest<{ data: ManagedUser[] }>("/users?pageSize=6", activeToken) : Promise.resolve({ data: [] }),
-        canReadUsers ? apiRequest<UserOptions>("/users/options", activeToken) : Promise.resolve(emptyUserOptions)
+        canReadUsers ? apiRequest<UserOptions>("/users/options", activeToken) : Promise.resolve(emptyUserOptions),
+        canManageDepartments ? apiRequest<{ data: ManagedDepartment[] }>("/departments?pageSize=8", activeToken) : Promise.resolve({ data: [] })
       ]);
 
       const rootFolder = roots.data[0];
@@ -419,7 +481,8 @@ export default function Home() {
         myAccessRequests: myAccessRequests.data,
         approvalRequests: approvalRequests.data,
         managedUsers: managedUsers.data,
-        userOptions
+        userOptions,
+        departments: departments.data
       });
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) {
@@ -759,6 +822,101 @@ export default function Home() {
     }
   }
 
+  function openCreateDepartment() {
+    setEditingDepartment(null);
+    setDepartmentName("");
+    setDepartmentCode("");
+    setDepartmentDescription("");
+    setDepartmentQuotaGb("");
+    setDepartmentStatus("ACTIVE");
+    setDepartmentMessage(null);
+    setDepartmentModalOpen(true);
+  }
+
+  function openEditDepartment(target: ManagedDepartment) {
+    setEditingDepartment(target);
+    setDepartmentName(target.name);
+    setDepartmentCode(target.code);
+    setDepartmentDescription(target.description ?? "");
+    setDepartmentQuotaGb(bytesStringToGb(target.storageQuotaBytes));
+    setDepartmentStatus(target.status);
+    setDepartmentMessage(null);
+    setDepartmentModalOpen(true);
+  }
+
+  async function handleSaveDepartment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!token) {
+      setError("Please sign in before managing departments.");
+      return;
+    }
+
+    if (!departmentName.trim() || !departmentCode.trim()) {
+      setDepartmentMessage("Department name and code are required.");
+      return;
+    }
+
+    setDepartmentSaving(true);
+    setDepartmentMessage(null);
+    setError(null);
+
+    try {
+      const storageQuotaBytes = gbInputToBytes(departmentQuotaGb);
+      const body = {
+        name: departmentName.trim(),
+        code: departmentCode.trim(),
+        description: departmentDescription.trim() || null,
+        storageQuotaBytes,
+        status: departmentStatus
+      };
+
+      if (editingDepartment) {
+        await apiRequest<ManagedDepartment>(`/departments/${editingDepartment.id}`, token, {
+          method: "PATCH",
+          body: JSON.stringify(body)
+        });
+      } else {
+        await apiRequest<ManagedDepartment>("/departments", token, {
+          method: "POST",
+          body: JSON.stringify(body)
+        });
+      }
+
+      await loadDashboard(token, searchQuery);
+      setDepartmentModalOpen(false);
+      setDepartmentMessage(editingDepartment ? "Department updated." : "Department created.");
+    } catch (caught) {
+      setDepartmentMessage(caught instanceof Error ? caught.message : "Unable to save department");
+    } finally {
+      setDepartmentSaving(false);
+    }
+  }
+
+  async function handleDepartmentStatus(target: ManagedDepartment, status: "ACTIVE" | "INACTIVE") {
+    if (!token) {
+      setError("Please sign in before managing departments.");
+      return;
+    }
+
+    setDepartmentStatusUpdatingId(target.id);
+    setDepartmentMessage(null);
+    setError(null);
+
+    try {
+      await apiRequest<ManagedDepartment>(`/departments/${target.id}/status`, token, {
+        method: "POST",
+        body: JSON.stringify({ status })
+      });
+      await loadDashboard(token, searchQuery);
+      setDepartmentMessage(status === "ACTIVE" ? "Department activated." : "Department marked inactive.");
+    } catch (caught) {
+      setDepartmentMessage(caught instanceof Error ? caught.message : "Unable to update department status");
+    } finally {
+      setDepartmentStatusUpdatingId(null);
+    }
+  }
+
   if (!token || !user) {
     return (
       <main className="login-shell">
@@ -873,6 +1031,7 @@ export default function Home() {
           {uploadMessage ? <p className="loading-banner">{uploadMessage}</p> : null}
           {accessMessage ? <p className="loading-banner">{accessMessage}</p> : null}
           {userMessage ? <p className="loading-banner">{userMessage}</p> : null}
+          {departmentMessage ? <p className="loading-banner">{departmentMessage}</p> : null}
           {loading && !data ? <p className="loading-banner">Loading live repository data...</p> : null}
 
           <section className="kpi-grid" aria-label="Repository metrics">
@@ -1061,6 +1220,67 @@ export default function Home() {
               </div>
             </article>
           </section>
+
+          {canManageDepartments ? (
+            <section className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Department Management</h2>
+                  <p>{data?.departments.length ?? 0} departments with quota and usage</p>
+                </div>
+                <button className="primary-button" type="button" onClick={openCreateDepartment}>
+                  <Building2 aria-hidden="true" size={17} />
+                  New Department
+                </button>
+              </div>
+
+              <div className="department-grid" role="table" aria-label="Departments">
+                <div className="department-row department-head" role="row">
+                  <span role="columnheader">Department</span>
+                  <span role="columnheader">Users</span>
+                  <span role="columnheader">Files</span>
+                  <span role="columnheader">Storage</span>
+                  <span role="columnheader">Status</span>
+                  <span role="columnheader">Actions</span>
+                </div>
+                {(data?.departments ?? []).map((department) => (
+                  <div className="department-row" role="row" key={department.id}>
+                    <span role="cell">
+                      <strong>{department.name}</strong>
+                      <small>{department.code}{department.description ? ` · ${department.description}` : ""}</small>
+                    </span>
+                    <span role="cell">{formatNumber(department.userCount)}</span>
+                    <span role="cell">{formatNumber(department.fileCount)}</span>
+                    <span role="cell">
+                      <strong>{formatBytes(Number(department.storageUsedBytes))}</strong>
+                      <small>
+                        {department.storageQuotaBytes
+                          ? `${department.quotaUsedPercent ?? 0}% of ${formatBytes(Number(department.storageQuotaBytes))}`
+                          : "No quota"}
+                      </small>
+                    </span>
+                    <span role="cell">
+                      <span className={`status ${department.status.toLowerCase()}`}>{titleCase(department.status)}</span>
+                    </span>
+                    <span role="cell" className="user-actions">
+                      <button className="row-text-button" type="button" onClick={() => openEditDepartment(department)}>
+                        Edit
+                      </button>
+                      <button
+                        className="row-text-button"
+                        type="button"
+                        disabled={departmentStatusUpdatingId === department.id}
+                        onClick={() => void handleDepartmentStatus(department, department.status === "ACTIVE" ? "INACTIVE" : "ACTIVE")}
+                      >
+                        {department.status === "ACTIVE" ? "Disable" : "Activate"}
+                      </button>
+                    </span>
+                  </div>
+                ))}
+                {data && data.departments.length === 0 ? <p className="empty-state">No departments configured.</p> : null}
+              </div>
+            </section>
+          ) : null}
 
           {canReadUsers ? (
             <section className="panel">
@@ -1344,6 +1564,74 @@ export default function Home() {
                 <button className="primary-button" type="submit" disabled={userSaving}>
                   <Users aria-hidden="true" size={17} />
                   {userSaving ? "Saving" : "Save User"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
+      {departmentModalOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel wide-modal" aria-label={editingDepartment ? "Edit department" : "Create department"}>
+            <div className="panel-header">
+              <div>
+                <h2>{editingDepartment ? "Edit Department" : "New Department"}</h2>
+                <p>{editingDepartment ? editingDepartment.code : "Master data and quota"}</p>
+              </div>
+              <button className="text-button" type="button" onClick={() => setDepartmentModalOpen(false)}>
+                Close
+              </button>
+            </div>
+
+            <form className="upload-form" onSubmit={handleSaveDepartment}>
+              <div className="form-grid">
+                <label>
+                  <span>Name</span>
+                  <input value={departmentName} onChange={(event) => setDepartmentName(event.target.value)} />
+                </label>
+
+                <label>
+                  <span>Code</span>
+                  <input value={departmentCode} onChange={(event) => setDepartmentCode(event.target.value)} />
+                </label>
+
+                <label>
+                  <span>Quota GB</span>
+                  <input
+                    value={departmentQuotaGb}
+                    onChange={(event) => setDepartmentQuotaGb(event.target.value)}
+                    inputMode="decimal"
+                    placeholder="Optional"
+                  />
+                </label>
+
+                <label>
+                  <span>Status</span>
+                  <select value={departmentStatus} onChange={(event) => setDepartmentStatus(event.target.value)}>
+                    <option value="ACTIVE">Active</option>
+                    <option value="INACTIVE">Inactive</option>
+                  </select>
+                </label>
+              </div>
+
+              <label>
+                <span>Description</span>
+                <textarea
+                  value={departmentDescription}
+                  onChange={(event) => setDepartmentDescription(event.target.value)}
+                  rows={3}
+                  placeholder="Optional ownership, location, or business context"
+                />
+              </label>
+
+              <div className="modal-actions">
+                <button className="secondary-button" type="button" onClick={() => setDepartmentModalOpen(false)}>
+                  Cancel
+                </button>
+                <button className="primary-button" type="submit" disabled={departmentSaving}>
+                  <Building2 aria-hidden="true" size={17} />
+                  {departmentSaving ? "Saving" : "Save Department"}
                 </button>
               </div>
             </form>
