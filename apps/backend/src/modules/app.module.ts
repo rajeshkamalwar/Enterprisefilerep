@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import { AccessRequestsController } from "./workflow/access-requests.controller";
 import { AdminController } from "./admin/admin.controller";
+import { OperationalMetricsService } from "./analytics/operational-metrics.service";
 import { AuthController } from "./auth/auth.controller";
 import { AuthGuard } from "./auth/auth.guard";
 import { AuthService } from "./auth/auth.service";
@@ -50,6 +51,7 @@ import { LocalStorageService } from "./storage/local-storage.service";
     HealthService,
     LocalStorageService,
     MailerService,
+    OperationalMetricsService,
     PermissionsGuard,
     RbacService,
     RepositoryService,

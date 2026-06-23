@@ -80,13 +80,3 @@ export const roles = [
   }
 ];
 
-export const healthChecks = [
-  { name: "api", status: "healthy", detail: "NestJS process is responding" },
-  { name: "database", status: "pending", detail: "PostgreSQL adapter not connected yet" },
-  { name: "redis", status: "pending", detail: "Redis queue adapter not connected yet" },
-  { name: "search", status: "pending", detail: "Meilisearch adapter not connected yet" },
-  { name: "storage", status: "healthy", detail: "Local storage adapter planned for first file milestone" },
-  { name: "clamav", status: "pending", detail: "ClamAV scan adapter not connected yet" },
-  { name: "smtp", status: "pending", detail: "SMTP settings endpoint scaffolded" }
-];
-

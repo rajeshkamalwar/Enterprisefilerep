@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
+import { OperationalMetricsService } from "../analytics/operational-metrics.service";
 import { AuthGuard } from "../auth/auth.guard";
 import { ScanQueueService } from "../queue/scan-queue.service";
 import { RequirePermissions } from "../rbac/permissions.decorator";
@@ -13,6 +14,7 @@ type RunScanBody = {
 @Controller("admin")
 export class AdminController {
   constructor(
+    private readonly metrics: OperationalMetricsService,
     private readonly scanQueue: ScanQueueService,
     private readonly scanner: ScanService
   ) {}
@@ -20,27 +22,13 @@ export class AdminController {
   @Get("dashboard")
   @RequirePermissions("settings.read")
   dashboard() {
-    return {
-      totalUsers: 143,
-      activeUsers: 138,
-      totalFiles: 24890,
-      storageUsedBytes: 1979120929996,
-      pendingAccessRequests: 12,
-      failedJobs: 0,
-      backupStatus: "completed",
-      smtpStatus: "needs_test"
-    };
+    return this.metrics.dashboard();
   }
 
   @Get("storage")
   @RequirePermissions("backup.read")
   storage() {
-    return {
-      driver: process.env.STORAGE_DRIVER ?? "local",
-      usedBytes: 1979120929996,
-      quotaBytes: 3199028310016,
-      warningThresholdPercent: 80
-    };
+    return this.metrics.storageSummary();
   }
 
   @Post("scans/run-pending")
