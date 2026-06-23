@@ -36,7 +36,7 @@ export class ScanQueueService implements OnModuleDestroy {
 
   async enqueueFileScan(data: ScanJobData) {
     const options: JobsOptions = {
-      jobId: `scan:${data.versionId}`
+      jobId: `scan-${data.versionId}`
     };
 
     return this.queue.add("scan-file-version", data, options);

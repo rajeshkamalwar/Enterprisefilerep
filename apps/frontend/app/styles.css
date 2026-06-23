@@ -29,6 +29,11 @@ input {
   font: inherit;
 }
 
+select,
+textarea {
+  font: inherit;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.65;
@@ -586,6 +591,73 @@ h1 {
   padding-bottom: 0;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(17, 24, 39, 0.42);
+  z-index: 20;
+}
+
+.modal-panel {
+  width: min(520px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 18px;
+}
+
+.upload-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.upload-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.upload-form input,
+.upload-form select,
+.upload-form textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fbfcfd;
+  color: var(--text);
+}
+
+.upload-form input,
+.upload-form select {
+  min-height: 42px;
+  padding: 8px 10px;
+}
+
+.upload-form textarea {
+  resize: vertical;
+  padding: 10px;
+}
+
+.upload-file-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 @media (max-width: 1100px) {
   .app-shell {
     grid-template-columns: 92px minmax(0, 1fr);
@@ -632,6 +704,14 @@ h1 {
 
   .heading-actions button {
     flex: 1;
+    justify-content: center;
+  }
+
+  .modal-actions {
+    flex-direction: column-reverse;
+  }
+
+  .modal-actions button {
     justify-content: center;
   }
 

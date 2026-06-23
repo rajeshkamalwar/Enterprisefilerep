@@ -125,6 +125,11 @@ type AppData = {
   files: RepositoryFile[];
 };
 
+type UploadResult = RepositoryFile & {
+  scanQueued?: boolean;
+  scanQueueError?: string;
+};
+
 const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
 class ApiError extends Error {
@@ -201,6 +206,32 @@ async function apiRequest<T>(path: string, token?: string, init: RequestInit = {
   return response.json() as Promise<T>;
 }
 
+async function uploadRequest(path: string, token: string, body: FormData) {
+  const response = await fetch(`${apiBase}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`
+    },
+    body
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    let message = text || `Request failed: ${response.status}`;
+
+    try {
+      const parsed = JSON.parse(text) as { message?: string; error?: string };
+      message = parsed.message ?? parsed.error ?? message;
+    } catch {
+      // Keep the plain response text when the server does not return JSON.
+    }
+
+    throw new ApiError(message, response.status);
+  }
+
+  return response.json() as Promise<UploadResult>;
+}
+
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<LoginResponse["user"] | null>(null);
@@ -210,6 +241,12 @@ export default function Home() {
   const [data, setData] = useState<AppData | null>(null);
   const [loading, setLoading] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadClassification, setUploadClassification] = useState("INTERNAL");
+  const [uploadDescription, setUploadDescription] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -324,6 +361,62 @@ export default function Home() {
     }
   }
 
+  async function handleUpload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!token) {
+      setError("Please sign in before uploading.");
+      return;
+    }
+
+    const folderId = data?.roots[0]?.id;
+
+    if (!folderId) {
+      setError("No destination folder is available.");
+      return;
+    }
+
+    if (!uploadFile) {
+      setUploadMessage("Choose a file before uploading.");
+      return;
+    }
+
+    setUploading(true);
+    setUploadMessage(null);
+    setError(null);
+
+    try {
+      const body = new FormData();
+      body.append("folderId", folderId);
+      body.append("classification", uploadClassification);
+      if (uploadDescription.trim()) {
+        body.append("description", uploadDescription.trim());
+      }
+      body.append("file", uploadFile);
+
+      const result = await uploadRequest("/files/upload", token, body);
+
+      try {
+        await apiRequest("/admin/scans/run-pending", token, {
+          method: "POST",
+          body: JSON.stringify({ limit: 10 })
+        });
+      } catch {
+        // Queue workers handle scanning in production; the admin scan call is a local-dev convenience.
+      }
+
+      await loadDashboard(token, searchQuery);
+      setUploadFile(null);
+      setUploadDescription("");
+      setUploadOpen(false);
+      setUploadMessage(result.scanQueued === false ? result.scanQueueError ?? "Uploaded, but scan queueing failed." : "Upload complete.");
+    } catch (caught) {
+      setUploadMessage(caught instanceof Error ? caught.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   if (!token || !user) {
     return (
       <main className="login-shell">
@@ -427,7 +520,7 @@ export default function Home() {
                 <ArchiveRestore aria-hidden="true" size={17} />
                 Recycle Bin
               </button>
-              <button className="primary-button" type="button">
+              <button className="primary-button" type="button" onClick={() => setUploadOpen(true)}>
                 <Upload aria-hidden="true" size={17} />
                 Upload
               </button>
@@ -435,6 +528,7 @@ export default function Home() {
           </section>
 
           {error ? <p className="error-banner">{error}</p> : null}
+          {uploadMessage ? <p className="loading-banner">{uploadMessage}</p> : null}
           {loading && !data ? <p className="loading-banner">Loading live repository data...</p> : null}
 
           <section className="kpi-grid" aria-label="Repository metrics">
@@ -547,6 +641,66 @@ export default function Home() {
           </section>
         </div>
       </section>
+
+      {uploadOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel" aria-label="Upload file">
+            <div className="panel-header">
+              <div>
+                <h2>Upload File</h2>
+                <p>{data?.roots[0]?.name ?? "Company Repository"}</p>
+              </div>
+              <button className="text-button" type="button" onClick={() => setUploadOpen(false)}>
+                Close
+              </button>
+            </div>
+
+            <form className="upload-form" onSubmit={handleUpload}>
+              <label>
+                <span>File</span>
+                <input
+                  type="file"
+                  onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
+                />
+              </label>
+
+              <label>
+                <span>Classification</span>
+                <select value={uploadClassification} onChange={(event) => setUploadClassification(event.target.value)}>
+                  <option value="PUBLIC_INTERNAL">Public Internal</option>
+                  <option value="INTERNAL">Internal</option>
+                  <option value="CONFIDENTIAL">Confidential</option>
+                  <option value="RESTRICTED">Restricted</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Description</span>
+                <textarea
+                  value={uploadDescription}
+                  onChange={(event) => setUploadDescription(event.target.value)}
+                  rows={3}
+                  placeholder="Optional business context"
+                />
+              </label>
+
+              {uploadFile ? (
+                <p className="upload-file-note">{uploadFile.name} · {formatBytes(uploadFile.size)}</p>
+              ) : null}
+
+              <div className="modal-actions">
+                <button className="secondary-button" type="button" onClick={() => setUploadOpen(false)}>
+                  Cancel
+                </button>
+                <button className="primary-button" type="submit" disabled={uploading}>
+                  <Upload aria-hidden="true" size={17} />
+                  {uploading ? "Uploading" : "Upload"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

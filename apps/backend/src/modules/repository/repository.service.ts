@@ -574,6 +574,15 @@ export class RepositoryService {
       previewStatus: string;
       uploadedAt: Date;
     } | null;
+    versions?: Array<{
+      id: string;
+      versionNumber: number;
+      sizeBytes: bigint;
+      checksumSha256: string;
+      scanStatus: ScanStatus;
+      previewStatus: string;
+      uploadedAt: Date;
+    }>;
   }) {
     return {
       ...file,
@@ -582,7 +591,11 @@ export class RepositoryService {
             ...file.currentVersion,
             sizeBytes: file.currentVersion.sizeBytes.toString()
           }
-        : null
+        : null,
+      versions: file.versions?.map((version) => ({
+        ...version,
+        sizeBytes: version.sizeBytes.toString()
+      }))
     };
   }
 }

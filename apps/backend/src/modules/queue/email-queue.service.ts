@@ -36,7 +36,7 @@ export class EmailQueueService implements OnModuleDestroy {
   async enqueue(input: QueueEmailInput) {
     const deliveryLog = await this.mailer.createDeliveryLog(input);
     const options: JobsOptions = {
-      jobId: `email:${deliveryLog.id}`
+      jobId: `email-${deliveryLog.id}`
     };
 
     const job = await this.queue.add(
