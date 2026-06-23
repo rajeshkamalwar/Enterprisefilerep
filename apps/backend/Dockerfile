@@ -19,6 +19,7 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
 COPY apps/backend/package.json ./apps/backend/package.json
+COPY apps/backend/src ./apps/backend/src
 COPY prisma.config.ts ./prisma.config.ts
 COPY apps/backend/prisma ./apps/backend/prisma
 EXPOSE 4000
