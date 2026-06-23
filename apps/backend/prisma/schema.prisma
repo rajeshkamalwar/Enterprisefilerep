@@ -34,6 +34,9 @@ enum AuditAction {
   USER_UPDATED
   ROLE_CREATED
   PERMISSION_ASSIGNED
+  ACCESS_REQUEST_CREATED
+  ACCESS_REQUEST_APPROVED
+  ACCESS_REQUEST_REJECTED
   ACCESS_DENIED
   FOLDER_CREATED
   FILE_UPLOADED
@@ -71,28 +74,36 @@ enum EmailDeliveryStatus {
   FAILED
 }
 
-model User {
-  id           String       @id @default(cuid())
-  email        String       @unique
-  passwordHash String       @map("password_hash")
-  fullName     String       @map("full_name")
-  employeeCode String?      @map("employee_code")
-  country      String?
-  timezone     String       @default("Asia/Calcutta")
-  status       UserStatus   @default(ACTIVE)
-  createdAt    DateTime     @default(now()) @map("created_at")
-  updatedAt    DateTime     @updatedAt @map("updated_at")
-  lastLoginAt  DateTime?    @map("last_login_at")
+enum AccessRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
 
-  departmentId String?      @map("department_id")
-  department   Department?  @relation(fields: [departmentId], references: [id])
-  roles        UserRole[]
-  groupLinks   GroupMember[]
-  sessions     UserSession[]
-  auditLogs    AuditLog[]   @relation("AuditActor")
-  createdFolders Folder[]    @relation("FolderCreatedBy")
-  createdFiles   RepositoryFile[] @relation("FileCreatedBy")
-  uploadedVersions FileVersion[] @relation("VersionUploadedBy")
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  fullName     String     @map("full_name")
+  employeeCode String?    @map("employee_code")
+  country      String?
+  timezone     String     @default("Asia/Calcutta")
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  lastLoginAt  DateTime?  @map("last_login_at")
+
+  departmentId           String?          @map("department_id")
+  department             Department?      @relation(fields: [departmentId], references: [id])
+  roles                  UserRole[]
+  groupLinks             GroupMember[]
+  sessions               UserSession[]
+  auditLogs              AuditLog[]       @relation("AuditActor")
+  createdFolders         Folder[]         @relation("FolderCreatedBy")
+  createdFiles           RepositoryFile[] @relation("FileCreatedBy")
+  uploadedVersions       FileVersion[]    @relation("VersionUploadedBy")
+  requestedAccess        AccessRequest[]  @relation("AccessRequestRequester")
+  reviewedAccessRequests AccessRequest[]  @relation("AccessRequestReviewer")
 
   @@map("users")
 }
@@ -106,21 +117,21 @@ model Department {
   status            String   @default("ACTIVE")
   createdAt         DateTime @default(now()) @map("created_at")
 
-  users  User[]
-  groups Group[]
+  users   User[]
+  groups  Group[]
   folders Folder[]
-  files RepositoryFile[]
+  files   RepositoryFile[]
 
   @@map("departments")
 }
 
 model Role {
-  id           String           @id @default(cuid())
-  code         String           @unique
+  id           String   @id @default(cuid())
+  code         String   @unique
   name         String
   description  String?
-  isSystemRole Boolean          @default(false) @map("is_system_role")
-  createdAt    DateTime         @default(now()) @map("created_at")
+  isSystemRole Boolean  @default(false) @map("is_system_role")
+  createdAt    DateTime @default(now()) @map("created_at")
 
   users       UserRole[]
   permissions RolePermission[]
@@ -133,7 +144,8 @@ model Permission {
   description String?
   createdAt   DateTime @default(now()) @map("created_at")
 
-  roles RolePermission[]
+  roles          RolePermission[]
+  accessRequests AccessRequest[]
 
   @@map("permissions")
 }
@@ -201,10 +213,35 @@ model AccessControlEntry {
   createdBy     String?      @map("created_by")
   createdAt     DateTime     @default(now()) @map("created_at")
 
+  @@unique([subjectType, subjectId, resourceType, resourceId, permissionKey])
   @@index([subjectType, subjectId])
   @@index([resourceType, resourceId])
-  @@unique([subjectType, subjectId, resourceType, resourceId, permissionKey])
   @@map("access_control_entries")
+}
+
+model AccessRequest {
+  id                    String              @id @default(cuid())
+  requesterId           String              @map("requester_id")
+  resourceType          ResourceType        @map("resource_type")
+  resourceId            String              @map("resource_id")
+  permissionKey         String              @map("permission_key")
+  businessJustification String              @map("business_justification")
+  status                AccessRequestStatus @default(PENDING)
+  reviewerId            String?             @map("reviewer_id")
+  decisionReason        String?             @map("decision_reason")
+  decidedAt             DateTime?           @map("decided_at")
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+
+  requester  User       @relation("AccessRequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  reviewer   User?      @relation("AccessRequestReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Restrict)
+
+  @@index([requesterId])
+  @@index([status])
+  @@index([resourceType, resourceId])
+  @@index([createdAt])
+  @@map("access_requests")
 }
 
 model UserSession {
@@ -247,23 +284,23 @@ model AuditLog {
 }
 
 model Folder {
-  id           String   @id @default(cuid())
-  parentId     String?  @map("parent_id")
+  id           String    @id @default(cuid())
+  parentId     String?   @map("parent_id")
   name         String
-  pathCache    String?  @map("path_cache")
-  departmentId String?  @map("department_id")
-  createdById  String   @map("created_by")
-  updatedById  String?  @map("updated_by")
-  deletedById  String?  @map("deleted_by")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  pathCache    String?   @map("path_cache")
+  departmentId String?   @map("department_id")
+  createdById  String    @map("created_by")
+  updatedById  String?   @map("updated_by")
+  deletedById  String?   @map("deleted_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
   deletedAt    DateTime? @map("deleted_at")
-  isDeleted    Boolean  @default(false) @map("is_deleted")
+  isDeleted    Boolean   @default(false) @map("is_deleted")
 
-  parent     Folder?  @relation("FolderTree", fields: [parentId], references: [id])
-  children   Folder[] @relation("FolderTree")
-  department Department? @relation(fields: [departmentId], references: [id])
-  createdBy  User @relation("FolderCreatedBy", fields: [createdById], references: [id])
+  parent     Folder?          @relation("FolderTree", fields: [parentId], references: [id])
+  children   Folder[]         @relation("FolderTree")
+  department Department?      @relation(fields: [departmentId], references: [id])
+  createdBy  User             @relation("FolderCreatedBy", fields: [createdById], references: [id])
   files      RepositoryFile[]
 
   @@unique([parentId, name])
@@ -274,27 +311,27 @@ model Folder {
 }
 
 model RepositoryFile {
-  id             String             @id @default(cuid())
-  folderId       String             @map("folder_id")
-  currentVersionId String?          @unique @map("current_version_id")
-  originalName   String             @map("original_name")
-  extension      String?
-  mimeType       String?            @map("mime_type")
-  classification FileClassification @default(INTERNAL)
-  description    String?
-  departmentId   String?            @map("department_id")
-  createdById    String             @map("created_by")
-  updatedById    String?            @map("updated_by")
-  deletedById    String?            @map("deleted_by")
-  createdAt      DateTime           @default(now()) @map("created_at")
-  updatedAt      DateTime           @updatedAt @map("updated_at")
-  deletedAt      DateTime?          @map("deleted_at")
-  isDeleted      Boolean            @default(false) @map("is_deleted")
+  id               String             @id @default(cuid())
+  folderId         String             @map("folder_id")
+  currentVersionId String?            @unique @map("current_version_id")
+  originalName     String             @map("original_name")
+  extension        String?
+  mimeType         String?            @map("mime_type")
+  classification   FileClassification @default(INTERNAL)
+  description      String?
+  departmentId     String?            @map("department_id")
+  createdById      String             @map("created_by")
+  updatedById      String?            @map("updated_by")
+  deletedById      String?            @map("deleted_by")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+  deletedAt        DateTime?          @map("deleted_at")
+  isDeleted        Boolean            @default(false) @map("is_deleted")
 
-  folder         Folder       @relation(fields: [folderId], references: [id])
-  department     Department?  @relation(fields: [departmentId], references: [id])
-  createdBy      User         @relation("FileCreatedBy", fields: [createdById], references: [id])
-  currentVersion FileVersion? @relation("CurrentFileVersion", fields: [currentVersionId], references: [id])
+  folder         Folder        @relation(fields: [folderId], references: [id])
+  department     Department?   @relation(fields: [departmentId], references: [id])
+  createdBy      User          @relation("FileCreatedBy", fields: [createdById], references: [id])
+  currentVersion FileVersion?  @relation("CurrentFileVersion", fields: [currentVersionId], references: [id])
   versions       FileVersion[] @relation("FileVersions")
 
   @@index([folderId])
@@ -307,22 +344,22 @@ model RepositoryFile {
 }
 
 model FileVersion {
-  id            String        @id @default(cuid())
-  fileId        String        @map("file_id")
-  versionNumber Int           @map("version_number")
-  storageKey    String        @unique @map("storage_key")
-  storagePath   String        @map("storage_path")
-  sizeBytes     BigInt        @map("size_bytes")
-  checksumSha256 String       @map("checksum_sha256")
-  mimeType      String?       @map("mime_type")
-  scanStatus    ScanStatus    @default(PENDING) @map("scan_status")
-  previewStatus PreviewStatus @default(PENDING) @map("preview_status")
-  uploadedById  String        @map("uploaded_by")
-  uploadedAt    DateTime      @default(now()) @map("uploaded_at")
+  id             String        @id @default(cuid())
+  fileId         String        @map("file_id")
+  versionNumber  Int           @map("version_number")
+  storageKey     String        @unique @map("storage_key")
+  storagePath    String        @map("storage_path")
+  sizeBytes      BigInt        @map("size_bytes")
+  checksumSha256 String        @map("checksum_sha256")
+  mimeType       String?       @map("mime_type")
+  scanStatus     ScanStatus    @default(PENDING) @map("scan_status")
+  previewStatus  PreviewStatus @default(PENDING) @map("preview_status")
+  uploadedById   String        @map("uploaded_by")
+  uploadedAt     DateTime      @default(now()) @map("uploaded_at")
 
-  file          RepositoryFile @relation("FileVersions", fields: [fileId], references: [id], onDelete: Cascade)
+  file           RepositoryFile  @relation("FileVersions", fields: [fileId], references: [id], onDelete: Cascade)
   currentForFile RepositoryFile? @relation("CurrentFileVersion")
-  uploadedBy    User @relation("VersionUploadedBy", fields: [uploadedById], references: [id])
+  uploadedBy     User            @relation("VersionUploadedBy", fields: [uploadedById], references: [id])
 
   @@unique([fileId, versionNumber])
   @@index([fileId])
