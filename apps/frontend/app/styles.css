@@ -491,14 +491,16 @@ h1 {
 }
 
 .status.pending,
-.status.scanning {
+.status.scanning,
+.status.suspended {
   color: var(--accent);
   background: #fff7e6;
 }
 
 .status.failed,
 .status.infected,
-.status.rejected {
+.status.rejected,
+.status.deactivated {
   color: var(--danger);
   background: #fff1f0;
 }
@@ -676,6 +678,115 @@ h1 {
   flex-shrink: 0;
 }
 
+.user-grid {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.user-row {
+  display: grid;
+  grid-template-columns: 1.4fr 0.9fr 1.1fr 0.7fr 0.75fr 1fr;
+  gap: 12px;
+  align-items: center;
+  min-height: 58px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.user-row:first-child {
+  border-top: 0;
+}
+
+.user-head {
+  min-height: 42px;
+  background: #f8fafc;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.user-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.user-row strong,
+.user-row small {
+  display: block;
+}
+
+.user-row small {
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.user-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.row-text-button {
+  min-height: 30px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: #fbfcfd;
+  color: var(--primary);
+  cursor: pointer;
+  padding: 0 9px;
+}
+
+.wide-modal {
+  width: min(760px, 100%);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.role-fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.role-fieldset legend {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 0 6px;
+}
+
+.role-checks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.role-checks label {
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fbfcfd;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.role-checks input {
+  width: 16px;
+  height: 16px;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -809,7 +920,14 @@ h1 {
     padding: 12px;
   }
 
-  .table-head {
+  .table-head,
+  .user-head {
     display: none;
+  }
+
+  .user-row,
+  .form-grid,
+  .role-checks {
+    grid-template-columns: 1fr;
   }
 }

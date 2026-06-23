@@ -17,6 +17,7 @@ import { PermissionsGuard } from "./rbac/permissions.guard";
 import { RbacService } from "./rbac/rbac.service";
 import { ReportsController } from "./reports/reports.controller";
 import { SmtpController } from "./smtp/smtp.controller";
+import { UsersController } from "./users/users.controller";
 import { RepositoryService } from "./repository/repository.service";
 import { ScanQueueService } from "./queue/scan-queue.service";
 import { EmailQueueService } from "./queue/email-queue.service";
@@ -24,6 +25,7 @@ import { ClamavService } from "./scanning/clamav.service";
 import { ScanService } from "./scanning/scan.service";
 import { MailerService } from "./smtp/mailer.service";
 import { LocalStorageService } from "./storage/local-storage.service";
+import { UsersService } from "./users/users.service";
 
 @Module({
   imports: [
@@ -42,7 +44,8 @@ import { LocalStorageService } from "./storage/local-storage.service";
     HealthController,
     RbacController,
     ReportsController,
-    SmtpController
+    SmtpController,
+    UsersController
   ],
   providers: [
     AccessRequestsService,
@@ -58,7 +61,8 @@ import { LocalStorageService } from "./storage/local-storage.service";
     RbacService,
     RepositoryService,
     ScanQueueService,
-    ScanService
+    ScanService,
+    UsersService
   ]
 })
 export class AppModule {}

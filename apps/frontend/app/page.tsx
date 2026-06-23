@@ -128,6 +128,8 @@ type AppData = {
   files: RepositoryFile[];
   myAccessRequests: AccessRequest[];
   approvalRequests: AccessRequest[];
+  managedUsers: ManagedUser[];
+  userOptions: UserOptions;
 };
 
 type UploadResult = RepositoryFile & {
@@ -151,6 +153,42 @@ type AccessRequest = {
   createdAt: string;
 };
 
+type ManagedUser = {
+  id: string;
+  email: string;
+  fullName: string;
+  employeeCode: string | null;
+  country: string | null;
+  timezone: string;
+  status: string;
+  departmentId: string | null;
+  department?: {
+    id: string;
+    name: string;
+    code: string;
+  } | null;
+  roles: Array<{
+    id: string;
+    code: string;
+    name: string;
+  }>;
+  lastLoginAt: string | null;
+  createdAt: string;
+};
+
+type UserOptions = {
+  departments: Array<{
+    id: string;
+    name: string;
+    code: string;
+  }>;
+  roles: Array<{
+    id: string;
+    code: string;
+    name: string;
+  }>;
+};
+
 const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
 const emptyDashboard: Dashboard = {
@@ -162,6 +200,11 @@ const emptyDashboard: Dashboard = {
   failedJobs: 0,
   smtpStatus: "restricted",
   recentActivity: []
+};
+
+const emptyUserOptions: UserOptions = {
+  departments: [],
+  roles: []
 };
 
 class ApiError extends Error {
@@ -288,6 +331,19 @@ export default function Home() {
   const [accessRequesting, setAccessRequesting] = useState(false);
   const [accessDecisionId, setAccessDecisionId] = useState<string | null>(null);
   const [accessMessage, setAccessMessage] = useState<string | null>(null);
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
+  const [userFullName, setUserFullName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [userPassword, setUserPassword] = useState("");
+  const [userEmployeeCode, setUserEmployeeCode] = useState("");
+  const [userCountry, setUserCountry] = useState("India");
+  const [userDepartmentId, setUserDepartmentId] = useState("");
+  const [userStatus, setUserStatus] = useState("ACTIVE");
+  const [userRoleIds, setUserRoleIds] = useState<string[]>([]);
+  const [userSaving, setUserSaving] = useState(false);
+  const [userMessage, setUserMessage] = useState<string | null>(null);
+  const [userStatusUpdatingId, setUserStatusUpdatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -320,6 +376,8 @@ export default function Home() {
   }, [data]);
 
   const canApproveAccess = Boolean(user?.roles.some((role) => role === "SUPER_ADMIN" || role === "DEPARTMENT_ADMIN"));
+  const canReadUsers = canApproveAccess;
+  const canWriteUsers = Boolean(user?.roles.includes("SUPER_ADMIN"));
 
   async function loadDashboard(activeToken: string, query = searchQuery) {
     setLoading(true);
@@ -334,7 +392,7 @@ export default function Home() {
         throw caught;
       });
 
-      const [dashboard, health, roots, fileSearch, myAccessRequests, approvalRequests] = await Promise.all([
+      const [dashboard, health, roots, fileSearch, myAccessRequests, approvalRequests, managedUsers, userOptions] = await Promise.all([
         dashboardRequest,
         apiRequest<HealthResponse>("/health"),
         apiRequest<{ data: FolderSummary[] }>("/folders", activeToken),
@@ -342,7 +400,9 @@ export default function Home() {
         apiRequest<{ data: AccessRequest[] }>("/access-requests/mine?pageSize=5", activeToken),
         canApproveAccess
           ? apiRequest<{ data: AccessRequest[] }>("/access-requests?status=PENDING&pageSize=5", activeToken)
-          : Promise.resolve({ data: [] })
+          : Promise.resolve({ data: [] }),
+        canReadUsers ? apiRequest<{ data: ManagedUser[] }>("/users?pageSize=6", activeToken) : Promise.resolve({ data: [] }),
+        canReadUsers ? apiRequest<UserOptions>("/users/options", activeToken) : Promise.resolve(emptyUserOptions)
       ]);
 
       const rootFolder = roots.data[0];
@@ -357,7 +417,9 @@ export default function Home() {
         folder,
         files: fileSearch.data,
         myAccessRequests: myAccessRequests.data,
-        approvalRequests: approvalRequests.data
+        approvalRequests: approvalRequests.data,
+        managedUsers: managedUsers.data,
+        userOptions
       });
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) {
@@ -583,6 +645,120 @@ export default function Home() {
     }
   }
 
+  function openCreateUser() {
+    const defaultRole = data?.userOptions.roles.find((role) => role.code === "EMPLOYEE") ?? data?.userOptions.roles[0];
+    setEditingUser(null);
+    setUserFullName("");
+    setUserEmail("");
+    setUserPassword("");
+    setUserEmployeeCode("");
+    setUserCountry("India");
+    setUserDepartmentId(data?.userOptions.departments[0]?.id ?? "");
+    setUserStatus("ACTIVE");
+    setUserRoleIds(defaultRole ? [defaultRole.id] : []);
+    setUserMessage(null);
+    setUserModalOpen(true);
+  }
+
+  function openEditUser(target: ManagedUser) {
+    setEditingUser(target);
+    setUserFullName(target.fullName);
+    setUserEmail(target.email);
+    setUserPassword("");
+    setUserEmployeeCode(target.employeeCode ?? "");
+    setUserCountry(target.country ?? "");
+    setUserDepartmentId(target.departmentId ?? "");
+    setUserStatus(target.status);
+    setUserRoleIds(target.roles.map((role) => role.id));
+    setUserMessage(null);
+    setUserModalOpen(true);
+  }
+
+  function toggleUserRole(roleId: string) {
+    setUserRoleIds((current) => (current.includes(roleId) ? current.filter((id) => id !== roleId) : [...current, roleId]));
+  }
+
+  async function handleSaveUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!token) {
+      setError("Please sign in before managing users.");
+      return;
+    }
+
+    if (!userFullName.trim() || (!editingUser && (!userEmail.trim() || !userPassword.trim()))) {
+      setUserMessage("Name, email, and password are required for new users.");
+      return;
+    }
+
+    setUserSaving(true);
+    setUserMessage(null);
+    setError(null);
+
+    try {
+      if (editingUser) {
+        await apiRequest<ManagedUser>(`/users/${editingUser.id}`, token, {
+          method: "PATCH",
+          body: JSON.stringify({
+            fullName: userFullName.trim(),
+            employeeCode: userEmployeeCode.trim() || null,
+            country: userCountry.trim() || null,
+            timezone: "Asia/Calcutta",
+            departmentId: userDepartmentId || null,
+            status: userStatus,
+            roleIds: userRoleIds
+          })
+        });
+      } else {
+        await apiRequest<ManagedUser>("/users", token, {
+          method: "POST",
+          body: JSON.stringify({
+            fullName: userFullName.trim(),
+            email: userEmail.trim(),
+            password: userPassword.trim(),
+            employeeCode: userEmployeeCode.trim() || undefined,
+            country: userCountry.trim() || undefined,
+            timezone: "Asia/Calcutta",
+            departmentId: userDepartmentId || undefined,
+            roleIds: userRoleIds
+          })
+        });
+      }
+
+      await loadDashboard(token, searchQuery);
+      setUserModalOpen(false);
+      setUserMessage(editingUser ? "User updated." : "User created.");
+    } catch (caught) {
+      setUserMessage(caught instanceof Error ? caught.message : "Unable to save user");
+    } finally {
+      setUserSaving(false);
+    }
+  }
+
+  async function handleUserStatus(target: ManagedUser, status: "ACTIVE" | "SUSPENDED" | "DEACTIVATED") {
+    if (!token) {
+      setError("Please sign in before managing users.");
+      return;
+    }
+
+    setUserStatusUpdatingId(target.id);
+    setUserMessage(null);
+    setError(null);
+
+    try {
+      await apiRequest<ManagedUser>(`/users/${target.id}/status`, token, {
+        method: "POST",
+        body: JSON.stringify({ status })
+      });
+      await loadDashboard(token, searchQuery);
+      setUserMessage(status === "ACTIVE" ? "User reactivated." : "User status updated.");
+    } catch (caught) {
+      setUserMessage(caught instanceof Error ? caught.message : "Unable to update user status");
+    } finally {
+      setUserStatusUpdatingId(null);
+    }
+  }
+
   if (!token || !user) {
     return (
       <main className="login-shell">
@@ -696,6 +872,7 @@ export default function Home() {
           {error ? <p className="error-banner">{error}</p> : null}
           {uploadMessage ? <p className="loading-banner">{uploadMessage}</p> : null}
           {accessMessage ? <p className="loading-banner">{accessMessage}</p> : null}
+          {userMessage ? <p className="loading-banner">{userMessage}</p> : null}
           {loading && !data ? <p className="loading-banner">Loading live repository data...</p> : null}
 
           <section className="kpi-grid" aria-label="Repository metrics">
@@ -884,6 +1061,68 @@ export default function Home() {
               </div>
             </article>
           </section>
+
+          {canReadUsers ? (
+            <section className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>User Management</h2>
+                  <p>{data?.managedUsers.length ?? 0} recently managed users</p>
+                </div>
+                {canWriteUsers ? (
+                  <button className="primary-button" type="button" onClick={openCreateUser}>
+                    <Users aria-hidden="true" size={17} />
+                    New User
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="user-grid" role="table" aria-label="Managed users">
+                <div className="user-row user-head" role="row">
+                  <span role="columnheader">User</span>
+                  <span role="columnheader">Department</span>
+                  <span role="columnheader">Roles</span>
+                  <span role="columnheader">Status</span>
+                  <span role="columnheader">Last Login</span>
+                  <span role="columnheader">Actions</span>
+                </div>
+                {(data?.managedUsers ?? []).map((managedUser) => (
+                  <div className="user-row" role="row" key={managedUser.id}>
+                    <span role="cell">
+                      <strong>{managedUser.fullName}</strong>
+                      <small>{managedUser.email}</small>
+                    </span>
+                    <span role="cell">{managedUser.department?.name ?? "Unassigned"}</span>
+                    <span role="cell">{managedUser.roles.map((role) => role.name).join(", ") || "No roles"}</span>
+                    <span role="cell">
+                      <span className={`status ${managedUser.status.toLowerCase()}`}>{titleCase(managedUser.status)}</span>
+                    </span>
+                    <span role="cell">{managedUser.lastLoginAt ? formatDate(managedUser.lastLoginAt) : "Never"}</span>
+                    <span role="cell" className="user-actions">
+                      {canWriteUsers ? (
+                        <>
+                          <button className="row-text-button" type="button" onClick={() => openEditUser(managedUser)}>
+                            Edit
+                          </button>
+                          <button
+                            className="row-text-button"
+                            type="button"
+                            disabled={userStatusUpdatingId === managedUser.id}
+                            onClick={() => void handleUserStatus(managedUser, managedUser.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE")}
+                          >
+                            {managedUser.status === "ACTIVE" ? "Suspend" : "Activate"}
+                          </button>
+                        </>
+                      ) : (
+                        "View"
+                      )}
+                    </span>
+                  </div>
+                ))}
+                {data && data.managedUsers.length === 0 ? <p className="empty-state">No users available for your scope.</p> : null}
+              </div>
+            </section>
+          ) : null}
         </div>
       </section>
 
@@ -1006,6 +1245,105 @@ export default function Home() {
                 <button className="primary-button" type="submit" disabled={accessRequesting}>
                   <KeyRound aria-hidden="true" size={17} />
                   {accessRequesting ? "Submitting" : "Submit"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
+      {userModalOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel wide-modal" aria-label={editingUser ? "Edit user" : "Create user"}>
+            <div className="panel-header">
+              <div>
+                <h2>{editingUser ? "Edit User" : "New User"}</h2>
+                <p>{editingUser ? editingUser.email : "Create employee account"}</p>
+              </div>
+              <button className="text-button" type="button" onClick={() => setUserModalOpen(false)}>
+                Close
+              </button>
+            </div>
+
+            <form className="upload-form" onSubmit={handleSaveUser}>
+              <div className="form-grid">
+                <label>
+                  <span>Full Name</span>
+                  <input value={userFullName} onChange={(event) => setUserFullName(event.target.value)} />
+                </label>
+
+                <label>
+                  <span>Email</span>
+                  <input
+                    value={userEmail}
+                    onChange={(event) => setUserEmail(event.target.value)}
+                    type="email"
+                    disabled={Boolean(editingUser)}
+                  />
+                </label>
+
+                {!editingUser ? (
+                  <label>
+                    <span>Temporary Password</span>
+                    <input value={userPassword} onChange={(event) => setUserPassword(event.target.value)} type="password" />
+                  </label>
+                ) : null}
+
+                <label>
+                  <span>Employee Code</span>
+                  <input value={userEmployeeCode} onChange={(event) => setUserEmployeeCode(event.target.value)} />
+                </label>
+
+                <label>
+                  <span>Country</span>
+                  <input value={userCountry} onChange={(event) => setUserCountry(event.target.value)} />
+                </label>
+
+                <label>
+                  <span>Department</span>
+                  <select value={userDepartmentId} onChange={(event) => setUserDepartmentId(event.target.value)}>
+                    <option value="">Unassigned</option>
+                    {(data?.userOptions.departments ?? []).map((department) => (
+                      <option value={department.id} key={department.id}>{department.name}</option>
+                    ))}
+                  </select>
+                </label>
+
+                {editingUser ? (
+                  <label>
+                    <span>Status</span>
+                    <select value={userStatus} onChange={(event) => setUserStatus(event.target.value)}>
+                      <option value="ACTIVE">Active</option>
+                      <option value="SUSPENDED">Suspended</option>
+                      <option value="DEACTIVATED">Deactivated</option>
+                    </select>
+                  </label>
+                ) : null}
+              </div>
+
+              <fieldset className="role-fieldset">
+                <legend>Roles</legend>
+                <div className="role-checks">
+                  {(data?.userOptions.roles ?? []).map((role) => (
+                    <label key={role.id}>
+                      <input
+                        type="checkbox"
+                        checked={userRoleIds.includes(role.id)}
+                        onChange={() => toggleUserRole(role.id)}
+                      />
+                      <span>{role.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <div className="modal-actions">
+                <button className="secondary-button" type="button" onClick={() => setUserModalOpen(false)}>
+                  Cancel
+                </button>
+                <button className="primary-button" type="submit" disabled={userSaving}>
+                  <Users aria-hidden="true" size={17} />
+                  {userSaving ? "Saving" : "Save User"}
                 </button>
               </div>
             </form>
