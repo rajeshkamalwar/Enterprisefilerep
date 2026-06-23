@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
 import { AuthGuard } from "../auth/auth.guard";
+import { ScanQueueService } from "../queue/scan-queue.service";
 import { RequirePermissions } from "../rbac/permissions.decorator";
 import { PermissionsGuard } from "../rbac/permissions.guard";
 import { ScanService } from "../scanning/scan.service";
@@ -11,7 +12,10 @@ type RunScanBody = {
 @UseGuards(AuthGuard, PermissionsGuard)
 @Controller("admin")
 export class AdminController {
-  constructor(private readonly scanner: ScanService) {}
+  constructor(
+    private readonly scanQueue: ScanQueueService,
+    private readonly scanner: ScanService
+  ) {}
 
   @Get("dashboard")
   @RequirePermissions("settings.read")
@@ -44,5 +48,11 @@ export class AdminController {
   runPendingScans(@Body() body: RunScanBody) {
     const limit = body.limit && body.limit > 0 ? Math.min(body.limit, 100) : 25;
     return this.scanner.scanPending(limit);
+  }
+
+  @Get("scans/queue")
+  @RequirePermissions("backup.read")
+  scanQueueStatus() {
+    return this.scanQueue.getCounts();
   }
 }

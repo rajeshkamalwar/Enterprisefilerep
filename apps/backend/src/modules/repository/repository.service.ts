@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { FileClassification, ScanStatus } from "@prisma/client";
 import type { MultipartFile } from "@fastify/multipart";
 import { PrismaService } from "../database/prisma.service";
+import { ScanQueueService } from "../queue/scan-queue.service";
 import { LocalStorageService } from "../storage/local-storage.service";
 
 type UploadFields = {
@@ -16,6 +17,7 @@ export class RepositoryService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly scanQueue: ScanQueueService,
     private readonly storage: LocalStorageService
   ) {}
 
@@ -156,7 +158,27 @@ export class RepositoryService {
       return updatedFile;
     });
 
-    return this.serializeFile(created);
+    const serialized = this.serializeFile(created);
+
+    try {
+      if (created.currentVersion) {
+        await this.scanQueue.enqueueFileScan({
+          fileId: created.id,
+          versionId: created.currentVersion.id
+        });
+      }
+
+      return {
+        ...serialized,
+        scanQueued: true
+      };
+    } catch (error) {
+      return {
+        ...serialized,
+        scanQueued: false,
+        scanQueueError: error instanceof Error ? error.message : "Unable to enqueue scan job"
+      };
+    }
   }
 
   async getFile(id: string) {

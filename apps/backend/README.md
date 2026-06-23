@@ -90,7 +90,19 @@ Run the pending scan worker:
 npm run worker:scan -w @filerepo/backend
 ```
 
-The worker scans `PENDING` and `FAILED` file versions through ClamAV `INSTREAM`.
+Run the automatic queue worker:
+
+```bash
+npm run worker:scan-queue -w @filerepo/backend
+```
+
+Uploads enqueue a BullMQ job in Redis. The queue worker consumes scan jobs and scans file versions through ClamAV `INSTREAM`.
+
+The one-shot worker scans `PENDING` and `FAILED` file versions directly and is useful for retries or maintenance:
+
+```bash
+npm run worker:scan -w @filerepo/backend
+```
 
 Clean files:
 
@@ -116,6 +128,13 @@ curl -X POST "http://localhost:4000/api/v1/admin/scans/run-pending" \
   -H "Authorization: Bearer ACCESS_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"limit": 25}'
+```
+
+Queue status:
+
+```bash
+curl -X GET "http://localhost:4000/api/v1/admin/scans/queue" \
+  -H "Authorization: Bearer ACCESS_TOKEN"
 ```
 
 ## Auth And RBAC

@@ -15,6 +15,7 @@ import { RbacService } from "./rbac/rbac.service";
 import { ReportsController } from "./reports/reports.controller";
 import { SmtpController } from "./smtp/smtp.controller";
 import { RepositoryService } from "./repository/repository.service";
+import { ScanQueueService } from "./queue/scan-queue.service";
 import { ClamavService } from "./scanning/clamav.service";
 import { ScanService } from "./scanning/scan.service";
 import { LocalStorageService } from "./storage/local-storage.service";
@@ -46,6 +47,7 @@ import { LocalStorageService } from "./storage/local-storage.service";
     PermissionsGuard,
     RbacService,
     RepositoryService,
+    ScanQueueService,
     ScanService
   ]
 })
