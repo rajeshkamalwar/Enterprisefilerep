@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import {
   ArchiveRestore,
   ArrowLeft,
@@ -16,6 +16,8 @@ import {
   Gauge,
   History,
   KeyRound,
+  LayoutGrid,
+  List,
   LockKeyhole,
   LogOut,
   Mail,
@@ -50,6 +52,7 @@ const modules = [
 ] as const;
 
 type ModuleId = (typeof modules)[number]["id"];
+type RepositoryViewMode = "list" | "grid";
 
 const moduleIds = new Set<string>(modules.map((module) => module.id));
 
@@ -405,6 +408,28 @@ type EmailTemplate = {
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
+const supportedUploadExtensions = [
+  "pdf",
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "csv",
+  "ppt",
+  "pptx",
+  "txt",
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
+  "zip",
+  "json",
+  "sql"
+];
+
+const uploadAcceptAttribute = supportedUploadExtensions.map((extension) => `.${extension}`).join(",");
+const supportedUploadExtensionSet = new Set(supportedUploadExtensions);
+
 const emptyDashboard: Dashboard = {
   totalUsers: 0,
   activeUsers: 0,
@@ -642,6 +667,7 @@ export default function Home() {
   const [searchScanStatus, setSearchScanStatus] = useState("");
   const [searchExtension, setSearchExtension] = useState("");
   const [repositorySort, setRepositorySort] = useState<RepositorySort>("updated-desc");
+  const [repositoryViewMode, setRepositoryViewMode] = useState<RepositoryViewMode>("list");
   const [auditQuery, setAuditQuery] = useState("");
   const [auditAction, setAuditAction] = useState("");
   const [auditSuccess, setAuditSuccess] = useState("all");
@@ -655,6 +681,7 @@ export default function Home() {
   const [uploadDescription, setUploadDescription] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [repositoryDragActive, setRepositoryDragActive] = useState(false);
   const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<RepositoryFile | null>(null);
   const [fileDetailOpen, setFileDetailOpen] = useState(false);
@@ -841,6 +868,9 @@ export default function Home() {
     });
   }, [data?.files, repositorySort]);
 
+  const maxUploadBytes = data?.systemSettings?.maxUploadBytes ?? 262_144_000;
+  const uploadPolicyText = `Max ${formatBytes(maxUploadBytes)} per file · ${supportedUploadExtensions.join(", ").toUpperCase()}`;
+
   const canApproveAccess = Boolean(user?.roles.some((role) => role === "SUPER_ADMIN" || role === "DEPARTMENT_ADMIN"));
   const canReadUsers = canApproveAccess;
   const canWriteUsers = Boolean(user?.roles.includes("SUPER_ADMIN"));
@@ -876,7 +906,7 @@ export default function Home() {
     setError(null);
 
     try {
-      const fileParams = new URLSearchParams({ pageSize: "8" });
+      const fileParams = new URLSearchParams({ pageSize: "100" });
       if (query.trim()) {
         fileParams.set("q", query.trim());
       }
@@ -1140,6 +1170,63 @@ export default function Home() {
     }
   }
 
+  function selectUploadFile(file: File | null) {
+    if (!file) {
+      setUploadFile(null);
+      return false;
+    }
+
+    const extension = fileExtension(file.name).toLowerCase();
+
+    if (!supportedUploadExtensionSet.has(extension)) {
+      setUploadFile(null);
+      setUploadMessage(`Unsupported file type .${extension}. Allowed types: ${supportedUploadExtensions.join(", ")}.`);
+      return false;
+    }
+
+    if (file.size > maxUploadBytes) {
+      setUploadFile(null);
+      setUploadMessage(`${file.name} is ${formatBytes(file.size)}. The current upload limit is ${formatBytes(maxUploadBytes)}.`);
+      return false;
+    }
+
+    setUploadFile(file);
+    setUploadMessage(null);
+    return true;
+  }
+
+  function handleUploadInputChange(event: ChangeEvent<HTMLInputElement>) {
+    selectUploadFile(event.target.files?.[0] ?? null);
+  }
+
+  function handleRepositoryDragOver(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setRepositoryDragActive(true);
+  }
+
+  function handleRepositoryDragLeave(event: DragEvent<HTMLDivElement>) {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setRepositoryDragActive(false);
+    }
+  }
+
+  function handleRepositoryDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setRepositoryDragActive(false);
+
+    const file = event.dataTransfer.files?.[0] ?? null;
+    const selected = selectUploadFile(file);
+
+    if (event.dataTransfer.files.length > 1 && selected) {
+      setUploadMessage("Multiple files were dropped. The first file has been selected for upload.");
+    }
+
+    if (selected) {
+      setUploadOpen(true);
+    }
+  }
+
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -1157,6 +1244,10 @@ export default function Home() {
 
     if (!uploadFile) {
       setUploadMessage("Choose a file before uploading.");
+      return;
+    }
+
+    if (!selectUploadFile(uploadFile)) {
       return;
     }
 
@@ -2130,6 +2221,24 @@ export default function Home() {
                       <XCircle aria-hidden="true" size={15} />
                       Clear
                     </button>
+                    <div className="repository-view-toggle" aria-label="Repository view mode">
+                      <button
+                        className={repositoryViewMode === "list" ? "active" : ""}
+                        type="button"
+                        title="List view"
+                        onClick={() => setRepositoryViewMode("list")}
+                      >
+                        <List aria-hidden="true" size={15} />
+                      </button>
+                      <button
+                        className={repositoryViewMode === "grid" ? "active" : ""}
+                        type="button"
+                        title="Grid view"
+                        onClick={() => setRepositoryViewMode("grid")}
+                      >
+                        <LayoutGrid aria-hidden="true" size={15} />
+                      </button>
+                    </div>
                     <details className="repository-advanced">
                       <summary><SlidersHorizontal aria-hidden="true" size={15} /> More filters</summary>
                       <div className="repository-advanced-grid">
@@ -2162,14 +2271,14 @@ export default function Home() {
                     </details>
                   </div>
 
-                  <div className="repository-table-head" aria-hidden="true">
+                  <div className={`repository-table-head${repositoryViewMode === "grid" ? " is-grid-hidden" : ""}`} aria-hidden="true">
                     <span>Name</span>
                     <span>Size / Type</span>
                     <span>Owner</span>
                     <span />
                   </div>
 
-                  <div className="repository-simple-list" aria-label="Repository items">
+                  <div className="repository-simple-list" data-view-mode={repositoryViewMode} aria-label="Repository items">
                     {repositoryFolders.map((folder) => (
                       <article className="repository-simple-item" key={folder.id}>
                         <button className="repository-simple-main" type="button" onClick={() => void handleOpenFolder(folder.id)}>
@@ -2225,7 +2334,7 @@ export default function Home() {
                           <div>
                             <button type="button" onClick={() => void handleOpenFile(file)}>
                               <FileText aria-hidden="true" size={15} />
-                              Details
+                              View
                             </button>
                             <button type="button" disabled={file.currentVersion?.scanStatus !== "CLEAN"} onClick={() => void handlePreviewFile(file)}>
                               <Search aria-hidden="true" size={15} />
@@ -2249,10 +2358,16 @@ export default function Home() {
                     ) : null}
                   </div>
 
-                  <div className="repository-drop-zone">
+                  <div
+                    className={`repository-drop-zone${repositoryDragActive ? " is-active" : ""}`}
+                    onDragOver={handleRepositoryDragOver}
+                    onDragLeave={handleRepositoryDragLeave}
+                    onDrop={handleRepositoryDrop}
+                  >
                     <Upload aria-hidden="true" size={34} />
-                    <strong>Drag and drop files here</strong>
-                    <span>or use Upload File to add documents into {data?.folder?.folder.name ?? "this folder"}</span>
+                    <strong>{repositoryDragActive ? "Drop file to upload" : "Drag and drop files here"}</strong>
+                    <span>{uploadPolicyText}</span>
+                    <small>Files will be added into {data?.folder?.folder.name ?? "this folder"} after classification.</small>
                     <button className="primary-button" type="button" onClick={() => setUploadOpen(true)}>
                       Browse Files
                     </button>
@@ -2899,6 +3014,22 @@ export default function Home() {
                       <input value={settingsBackup} onChange={(event) => setSettingsBackup(event.target.value)} />
                     </label>
                   </div>
+                  <div className="settings-policy-card" aria-label="Repository upload policy">
+                    <div>
+                      <strong>Repository Upload Policy</strong>
+                      <span>These limits are enforced before files are sent to the server.</span>
+                    </div>
+                    <div className="settings-policy-grid">
+                      <article>
+                        <span>Max file size</span>
+                        <strong>{formatBytes(maxUploadBytes)}</strong>
+                      </article>
+                      <article>
+                        <span>Supported types</span>
+                        <strong>{supportedUploadExtensions.join(", ").toUpperCase()}</strong>
+                      </article>
+                    </div>
+                  </div>
                   <div className="modal-actions">
                     <button className="primary-button" type="submit" disabled={settingsSaving}>
                       <Settings aria-hidden="true" size={17} />
@@ -2946,6 +3077,30 @@ export default function Home() {
               </button>
             </div>
             {fileActionMessage ? <p className="loading-banner">{fileActionMessage}</p> : null}
+            <div className="file-viewer-actions" aria-label="File actions">
+              <button
+                className="primary-button"
+                type="button"
+                disabled={selectedFile.currentVersion?.scanStatus !== "CLEAN"}
+                onClick={() => void handlePreviewFile(selectedFile)}
+              >
+                <Search aria-hidden="true" size={17} />
+                View File
+              </button>
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={selectedFile.currentVersion?.scanStatus !== "CLEAN" || downloadingFileId === selectedFile.id}
+                onClick={() => void handleDownload(selectedFile)}
+              >
+                <Download aria-hidden="true" size={17} />
+                {downloadingFileId === selectedFile.id ? "Downloading" : "Download"}
+              </button>
+              <button className="secondary-button danger" type="button" onClick={() => void handleDeleteFile(selectedFile)}>
+                <XCircle aria-hidden="true" size={17} />
+                Delete
+              </button>
+            </div>
             <div className="module-status-grid">
               <article><strong>Classification</strong><span>{titleCase(selectedFile.classification)}</span></article>
               <article><strong>Scan</strong><span>{titleCase(selectedFile.currentVersion?.scanStatus ?? "pending")}</span></article>
@@ -3111,7 +3266,8 @@ export default function Home() {
                 <span>File</span>
                 <input
                   type="file"
-                  onChange={(event) => setUploadFile(event.target.files?.[0] ?? null)}
+                  accept={uploadAcceptAttribute}
+                  onChange={handleUploadInputChange}
                 />
               </label>
 
@@ -3138,6 +3294,7 @@ export default function Home() {
               {uploadFile ? (
                 <p className="upload-file-note">{uploadFile.name} · {formatBytes(uploadFile.size)}</p>
               ) : null}
+              <p className="upload-policy-note">{uploadPolicyText}</p>
 
               <div className="modal-actions">
                 <button className="secondary-button" type="button" onClick={() => setUploadOpen(false)}>

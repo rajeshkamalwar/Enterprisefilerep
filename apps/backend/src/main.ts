@@ -1,3 +1,4 @@
+import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
