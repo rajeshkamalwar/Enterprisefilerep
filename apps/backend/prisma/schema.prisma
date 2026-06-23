@@ -39,6 +39,8 @@ enum AuditAction {
   FILE_UPLOADED
   FILE_DOWNLOADED
   FILE_DELETED
+  FILE_SCAN_COMPLETED
+  FILE_SCAN_FAILED
 }
 
 enum FileClassification {

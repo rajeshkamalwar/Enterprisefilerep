@@ -1,11 +1,18 @@
-import { Controller, Get, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
 import { AuthGuard } from "../auth/auth.guard";
 import { RequirePermissions } from "../rbac/permissions.decorator";
 import { PermissionsGuard } from "../rbac/permissions.guard";
+import { ScanService } from "../scanning/scan.service";
+
+type RunScanBody = {
+  limit?: number;
+};
 
 @UseGuards(AuthGuard, PermissionsGuard)
 @Controller("admin")
 export class AdminController {
+  constructor(private readonly scanner: ScanService) {}
+
   @Get("dashboard")
   @RequirePermissions("settings.read")
   dashboard() {
@@ -30,5 +37,12 @@ export class AdminController {
       quotaBytes: 3199028310016,
       warningThresholdPercent: 80
     };
+  }
+
+  @Post("scans/run-pending")
+  @RequirePermissions("backup.run")
+  runPendingScans(@Body() body: RunScanBody) {
+    const limit = body.limit && body.limit > 0 ? Math.min(body.limit, 100) : 25;
+    return this.scanner.scanPending(limit);
   }
 }

@@ -15,6 +15,8 @@ import { RbacService } from "./rbac/rbac.service";
 import { ReportsController } from "./reports/reports.controller";
 import { SmtpController } from "./smtp/smtp.controller";
 import { RepositoryService } from "./repository/repository.service";
+import { ClamavService } from "./scanning/clamav.service";
+import { ScanService } from "./scanning/scan.service";
 import { LocalStorageService } from "./storage/local-storage.service";
 
 @Module({
@@ -36,6 +38,15 @@ import { LocalStorageService } from "./storage/local-storage.service";
     ReportsController,
     SmtpController
   ],
-  providers: [AuthGuard, AuthService, LocalStorageService, PermissionsGuard, RbacService, RepositoryService]
+  providers: [
+    AuthGuard,
+    AuthService,
+    ClamavService,
+    LocalStorageService,
+    PermissionsGuard,
+    RbacService,
+    RepositoryService,
+    ScanService
+  ]
 })
 export class AppModule {}

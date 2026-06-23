@@ -6,6 +6,7 @@
     "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
+    "worker:scan": "tsx src/workers/scan-pending.ts",
     "prisma:generate": "prisma generate --config ../../prisma.config.ts",
     "prisma:migrate": "prisma migrate dev --config ../../prisma.config.ts",
     "prisma:seed": "tsx prisma/seed.ts",

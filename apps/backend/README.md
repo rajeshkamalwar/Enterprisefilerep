@@ -82,6 +82,42 @@ curl -X POST "http://localhost:4000/api/v1/files/upload" \
 
 The upload response returns metadata with `scanStatus=PENDING`. The ClamAV worker milestone will later move clean files from quarantine into available storage.
 
+## Antivirus Scanning
+
+Run the pending scan worker:
+
+```bash
+npm run worker:scan -w @filerepo/backend
+```
+
+The worker scans `PENDING` and `FAILED` file versions through ClamAV `INSTREAM`.
+
+Clean files:
+
+- Are marked `CLEAN`.
+- Move from `quarantine/` to `originals/`.
+- Become downloadable.
+
+Infected files:
+
+- Are marked `INFECTED`.
+- Stay unavailable for download.
+- Create an audit log entry.
+
+Failed scans:
+
+- Are marked `FAILED`.
+- Can be retried by running the worker again.
+
+Manual admin trigger:
+
+```bash
+curl -X POST "http://localhost:4000/api/v1/admin/scans/run-pending" \
+  -H "Authorization: Bearer ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"limit": 25}'
+```
+
 ## Auth And RBAC
 
 Protected endpoints use:
