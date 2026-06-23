@@ -48,6 +48,29 @@ const modules = [
 
 type ModuleId = (typeof modules)[number]["id"];
 
+const auditActions = [
+  "LOGIN_SUCCESS",
+  "LOGIN_FAILURE",
+  "LOGOUT",
+  "DEPARTMENT_CREATED",
+  "DEPARTMENT_UPDATED",
+  "USER_CREATED",
+  "USER_UPDATED",
+  "ROLE_CREATED",
+  "PERMISSION_ASSIGNED",
+  "ACCESS_REQUEST_CREATED",
+  "ACCESS_REQUEST_APPROVED",
+  "ACCESS_REQUEST_REJECTED",
+  "ACCESS_DENIED",
+  "FOLDER_CREATED",
+  "FOLDER_UPDATED",
+  "FILE_UPLOADED",
+  "FILE_DOWNLOADED",
+  "FILE_DELETED",
+  "FILE_SCAN_COMPLETED",
+  "FILE_SCAN_FAILED"
+];
+
 type LoginResponse = {
   accessToken: string;
   user: {
@@ -147,6 +170,13 @@ type AppData = {
   managedUsers: ManagedUser[];
   userOptions: UserOptions;
   departments: ManagedDepartment[];
+  auditLogs: AuditLog[];
+  auditMeta: {
+    page: number;
+    pageSize: number;
+    total: number;
+    pageCount: number;
+  };
 };
 
 type UploadResult = RepositoryFile & {
@@ -219,6 +249,36 @@ type ManagedDepartment = {
   folderCount: number;
   fileCount: number;
   createdAt: string;
+};
+
+type AuditLog = {
+  id: string;
+  actorUserId: string | null;
+  actor: {
+    id: string;
+    email: string;
+    fullName: string;
+  } | null;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  entityName: string | null;
+  success: boolean;
+  failureReason: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+};
+
+type AuditLogResponse = {
+  data: AuditLog[];
+  meta: AppData["auditMeta"];
+};
+
+type AuditFilters = {
+  q: string;
+  action: string;
+  success: string;
 };
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
@@ -310,6 +370,24 @@ function titleCase(value: string) {
     .join(" ");
 }
 
+function auditPath(filters: AuditFilters) {
+  const params = new URLSearchParams({ pageSize: "20" });
+
+  if (filters.q.trim()) {
+    params.set("q", filters.q.trim());
+  }
+
+  if (filters.action) {
+    params.set("action", filters.action);
+  }
+
+  if (filters.success === "true" || filters.success === "false") {
+    params.set("success", filters.success);
+  }
+
+  return `/audit-logs?${params.toString()}`;
+}
+
 async function apiRequest<T>(path: string, token?: string, init: RequestInit = {}) {
   const response = await fetch(`${apiBase}${path}`, {
     ...init,
@@ -370,6 +448,9 @@ export default function Home() {
   const [password, setPassword] = useState("");
   const [activeModule, setActiveModule] = useState<ModuleId>("dashboard");
   const [searchQuery, setSearchQuery] = useState("");
+  const [auditQuery, setAuditQuery] = useState("");
+  const [auditAction, setAuditAction] = useState("");
+  const [auditSuccess, setAuditSuccess] = useState("all");
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [data, setData] = useState<AppData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -468,7 +549,12 @@ export default function Home() {
     settings: canWriteUsers
   };
 
-  async function loadDashboard(activeToken: string, query = searchQuery, folderId = activeFolderId) {
+  async function loadDashboard(
+    activeToken: string,
+    query = searchQuery,
+    folderId = activeFolderId,
+    filters: AuditFilters = { q: auditQuery, action: auditAction, success: auditSuccess }
+  ) {
     setLoading(true);
     setError(null);
 
@@ -490,7 +576,8 @@ export default function Home() {
         approvalRequests,
         managedUsers,
         userOptions,
-        departments
+        departments,
+        auditLogs
       ] = await Promise.all([
         dashboardRequest,
         apiRequest<HealthResponse>("/health"),
@@ -502,7 +589,10 @@ export default function Home() {
           : Promise.resolve({ data: [] }),
         canReadUsers ? apiRequest<{ data: ManagedUser[] }>("/users?pageSize=6", activeToken) : Promise.resolve({ data: [] }),
         canReadUsers ? apiRequest<UserOptions>("/users/options", activeToken) : Promise.resolve(emptyUserOptions),
-        canManageDepartments ? apiRequest<{ data: ManagedDepartment[] }>("/departments?pageSize=8", activeToken) : Promise.resolve({ data: [] })
+        canManageDepartments ? apiRequest<{ data: ManagedDepartment[] }>("/departments?pageSize=8", activeToken) : Promise.resolve({ data: [] }),
+        canApproveAccess
+          ? apiRequest<AuditLogResponse>(auditPath(filters), activeToken)
+          : Promise.resolve({ data: [], meta: { page: 1, pageSize: 20, total: 0, pageCount: 1 } })
       ]);
 
       const selectedFolderId = folderId ?? roots.data[0]?.id ?? null;
@@ -522,7 +612,9 @@ export default function Home() {
         approvalRequests: approvalRequests.data,
         managedUsers: managedUsers.data,
         userOptions,
-        departments: departments.data
+        departments: departments.data,
+        auditLogs: auditLogs.data,
+        auditMeta: auditLogs.meta
       });
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) {
@@ -581,6 +673,25 @@ export default function Home() {
 
     if (token) {
       void loadDashboard(token, query);
+    }
+  }
+
+  function handleAuditSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const filters = {
+      q: String(formData.get("auditSearch") ?? ""),
+      action: String(formData.get("auditAction") ?? ""),
+      success: String(formData.get("auditSuccess") ?? "all")
+    };
+
+    setAuditQuery(filters.q);
+    setAuditAction(filters.action);
+    setAuditSuccess(filters.success);
+    setActiveModule("audit");
+
+    if (token) {
+      void loadDashboard(token, searchQuery, activeFolderId, filters);
     }
   }
 
@@ -1596,17 +1707,76 @@ export default function Home() {
               <div className="panel-header">
                 <div>
                   <h2>Audit Logs</h2>
-                  <p>{data?.dashboard.recentActivity.length ?? 0} latest events</p>
+                  <p>{formatNumber(data?.auditMeta.total ?? 0)} matching compliance events</p>
                 </div>
+                <button className="text-button" type="button" onClick={() => void loadDashboard(token)}>
+                  <RefreshCcw aria-hidden="true" size={15} />
+                  Refresh
+                </button>
               </div>
-              <ol className="activity-list module-activity-list">
-                {(data?.dashboard.recentActivity ?? []).map((activity) => (
-                  <li key={activity.id}>
-                    <strong>{titleCase(activity.action)}</strong>
-                    <span>{activity.entityName ?? activity.actor} · {formatDate(activity.createdAt)}</span>
-                  </li>
+
+              <form className="module-filter-bar" onSubmit={handleAuditSearch}>
+                <label>
+                  <span>Search</span>
+                  <input
+                    name="auditSearch"
+                    value={auditQuery}
+                    onChange={(event) => setAuditQuery(event.target.value)}
+                    placeholder="Actor, entity, ID, reason"
+                  />
+                </label>
+                <label>
+                  <span>Action</span>
+                  <select name="auditAction" value={auditAction} onChange={(event) => setAuditAction(event.target.value)}>
+                    <option value="">All actions</option>
+                    {auditActions.map((action) => (
+                      <option value={action} key={action}>{titleCase(action)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Result</span>
+                  <select name="auditSuccess" value={auditSuccess} onChange={(event) => setAuditSuccess(event.target.value)}>
+                    <option value="all">All results</option>
+                    <option value="true">Success</option>
+                    <option value="false">Failed</option>
+                  </select>
+                </label>
+                <button className="primary-button" type="submit">
+                  <Search aria-hidden="true" size={16} />
+                  Apply
+                </button>
+              </form>
+
+              <div className="audit-grid" role="table" aria-label="Audit logs">
+                <div className="audit-row audit-head" role="row">
+                  <span role="columnheader">Time</span>
+                  <span role="columnheader">Actor</span>
+                  <span role="columnheader">Action</span>
+                  <span role="columnheader">Entity</span>
+                  <span role="columnheader">Result</span>
+                  <span role="columnheader">Reason</span>
+                </div>
+                {(data?.auditLogs ?? []).map((log) => (
+                  <div className="audit-row" role="row" key={log.id}>
+                    <span role="cell">{formatDate(log.createdAt)}</span>
+                    <span role="cell">
+                      <strong>{log.actor?.fullName ?? "System"}</strong>
+                      <small>{log.actor?.email ?? log.ipAddress ?? log.actorUserId ?? "Internal event"}</small>
+                    </span>
+                    <span role="cell">{titleCase(log.action)}</span>
+                    <span role="cell">
+                      <strong>{log.entityName ?? log.entityType ?? "System"}</strong>
+                      <small>{log.entityId ?? log.id}</small>
+                    </span>
+                    <span role="cell">
+                      <span className={`status ${log.success ? "approved" : "failed"}`}>{log.success ? "Success" : "Failed"}</span>
+                    </span>
+                    <span role="cell">{log.failureReason ?? "None"}</span>
+                  </div>
                 ))}
-              </ol>
+                {data && data.auditLogs.length === 0 ? <p className="empty-state">No audit events match the current filters.</p> : null}
+              </div>
             </section>
           ) : null}
 

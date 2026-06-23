@@ -4,6 +4,8 @@ import { AccessRequestsController } from "./workflow/access-requests.controller"
 import { AccessRequestsService } from "./workflow/access-requests.service";
 import { AdminController } from "./admin/admin.controller";
 import { OperationalMetricsService } from "./analytics/operational-metrics.service";
+import { AuditLogsController } from "./audit/audit-logs.controller";
+import { AuditLogsService } from "./audit/audit-logs.service";
 import { AuthController } from "./auth/auth.controller";
 import { AuthGuard } from "./auth/auth.guard";
 import { AuthService } from "./auth/auth.service";
@@ -40,6 +42,7 @@ import { UsersService } from "./users/users.service";
   controllers: [
     AccessRequestsController,
     AdminController,
+    AuditLogsController,
     AuthController,
     DepartmentsController,
     FilesController,
@@ -52,6 +55,7 @@ import { UsersService } from "./users/users.service";
   ],
   providers: [
     AccessRequestsService,
+    AuditLogsService,
     AuthGuard,
     AuthService,
     ClamavService,
