@@ -463,6 +463,33 @@ function displayError(caught: unknown) {
   return caught instanceof Error ? caught.message : "Unable to load dashboard data";
 }
 
+function decodeJwtPayload(token: string) {
+  const [, payload] = token.split(".");
+
+  if (!payload) {
+    return null;
+  }
+
+  try {
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+
+    return JSON.parse(window.atob(padded)) as { exp?: number };
+  } catch {
+    return null;
+  }
+}
+
+function isTokenExpired(token: string, graceSeconds = 30) {
+  const payload = decodeJwtPayload(token);
+
+  if (!payload?.exp) {
+    return true;
+  }
+
+  return payload.exp * 1000 <= Date.now() + graceSeconds * 1000;
+}
+
 function formatNumber(value: number) {
   return new Intl.NumberFormat("en-IN").format(value);
 }
@@ -766,20 +793,52 @@ export default function Home() {
   const [smtpMessage, setSmtpMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  function clearSession(message?: string) {
+    window.localStorage.removeItem("filerepo.token");
+    window.localStorage.removeItem("filerepo.user");
+    setToken(null);
+    setUser(null);
+    setData(null);
+    setLoading(false);
+    setAuthLoading(false);
+
+    if (message) {
+      setError(message);
+    }
+  }
+
   useEffect(() => {
     const savedToken = window.localStorage.getItem("filerepo.token");
     const savedUser = window.localStorage.getItem("filerepo.user");
 
-    if (savedToken && savedUser) {
-      setToken(savedToken);
+    if (!savedToken || !savedUser) {
+      return;
+    }
+
+    if (isTokenExpired(savedToken)) {
+      clearSession("Session expired. Please sign in again.");
+      return;
+    }
+
+    try {
       setUser(JSON.parse(savedUser) as LoginResponse["user"]);
+      setToken(savedToken);
+    } catch {
+      clearSession("Saved session could not be restored. Please sign in again.");
     }
   }, []);
 
   useEffect(() => {
-    if (token) {
-      void loadDashboard(token);
+    if (!token) {
+      return;
     }
+
+    if (isTokenExpired(token)) {
+      clearSession("Session expired. Please sign in again.");
+      return;
+    }
+
+    void loadDashboard(token);
   }, [token]);
 
   useEffect(() => {
@@ -911,6 +970,11 @@ export default function Home() {
       extension: searchExtension
     }
   ) {
+    if (isTokenExpired(activeToken)) {
+      clearSession("Session expired. Please sign in again.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -1020,12 +1084,7 @@ export default function Home() {
       });
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) {
-        window.localStorage.removeItem("filerepo.token");
-        window.localStorage.removeItem("filerepo.user");
-        setToken(null);
-        setUser(null);
-        setData(null);
-        setError("Session expired. Please sign in again.");
+        clearSession("Session expired. Please sign in again.");
         return;
       }
 
@@ -1066,11 +1125,7 @@ export default function Home() {
   }
 
   function handleLogout() {
-    window.localStorage.removeItem("filerepo.token");
-    window.localStorage.removeItem("filerepo.user");
-    setToken(null);
-    setUser(null);
-    setData(null);
+    clearSession();
   }
 
   function handleSearch(event: FormEvent<HTMLFormElement>) {
