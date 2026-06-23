@@ -19,6 +19,7 @@ import {
   LockKeyhole,
   LogOut,
   Mail,
+  MoreHorizontal,
   Pencil,
   RefreshCcw,
   Search,
@@ -2068,12 +2069,25 @@ export default function Home() {
                         <span className="repository-folder-icon"><FolderTree aria-hidden="true" size={22} /></span>
                         <span>
                           <strong>{folder.name}</strong>
-                          <small>{folder.childFolderCount} folders · {folder.fileCount} files</small>
+                          <small>Folder · {folder.childFolderCount} folders · {folder.fileCount} files</small>
                         </span>
                       </button>
-                      <button className="row-icon-button" type="button" title={`Rename ${folder.name}`} onClick={() => openEditFolder(folder)}>
-                        <Pencil aria-hidden="true" size={14} />
-                      </button>
+                      <span className="repository-simple-meta">Folder</span>
+                      <details className="repository-more-menu">
+                        <summary title={`More actions for ${folder.name}`}>
+                          <MoreHorizontal aria-hidden="true" size={17} />
+                        </summary>
+                        <div>
+                          <button type="button" onClick={() => void handleOpenFolder(folder.id)}>
+                            <FolderTree aria-hidden="true" size={15} />
+                            Open
+                          </button>
+                          <button type="button" onClick={() => openEditFolder(folder)}>
+                            <Pencil aria-hidden="true" size={15} />
+                            Rename
+                          </button>
+                        </div>
+                      </details>
                     </article>
                   ))}
 
@@ -2084,24 +2098,35 @@ export default function Home() {
                         <span>
                           <strong>{file.originalName}</strong>
                           <small>
-                            {file.currentVersion ? formatBytes(Number(file.currentVersion.sizeBytes)) : "0 B"} · {file.createdBy?.fullName ?? file.department?.name ?? "System"} · {formatDate(file.updatedAt)}
+                            {fileExtension(file.originalName)} · {formatDate(file.updatedAt)}
                           </small>
                         </span>
                       </button>
-                      <span className={`status ${file.currentVersion?.scanStatus.toLowerCase() ?? "pending"}`}>
-                        {titleCase(file.currentVersion?.scanStatus ?? "PENDING")}
-                      </span>
-                      <div className="table-actions">
-                        <button className="row-icon-button" type="button" title={`Preview ${file.originalName}`} disabled={file.currentVersion?.scanStatus !== "CLEAN"} onClick={() => void handlePreviewFile(file)}>
-                          <Search aria-hidden="true" size={15} />
-                        </button>
-                        <button className="row-icon-button" type="button" title={`Download ${file.originalName}`} disabled={file.currentVersion?.scanStatus !== "CLEAN" || downloadingFileId === file.id} onClick={() => void handleDownload(file)}>
-                          <Download aria-hidden="true" size={15} />
-                        </button>
-                        <button className="row-icon-button danger" type="button" title={`Delete ${file.originalName}`} onClick={() => void handleDeleteFile(file)}>
-                          <XCircle aria-hidden="true" size={15} />
-                        </button>
-                      </div>
+                      <span className="repository-simple-meta">{file.currentVersion ? formatBytes(Number(file.currentVersion.sizeBytes)) : "0 B"}</span>
+                      <span className="repository-simple-meta">{file.createdBy?.fullName ?? file.department?.name ?? "System"}</span>
+                      <details className="repository-more-menu">
+                        <summary title={`More actions for ${file.originalName}`}>
+                          <MoreHorizontal aria-hidden="true" size={17} />
+                        </summary>
+                        <div>
+                          <button type="button" onClick={() => void handleOpenFile(file)}>
+                            <FileText aria-hidden="true" size={15} />
+                            Details
+                          </button>
+                          <button type="button" disabled={file.currentVersion?.scanStatus !== "CLEAN"} onClick={() => void handlePreviewFile(file)}>
+                            <Search aria-hidden="true" size={15} />
+                            Preview
+                          </button>
+                          <button type="button" disabled={file.currentVersion?.scanStatus !== "CLEAN" || downloadingFileId === file.id} onClick={() => void handleDownload(file)}>
+                            <Download aria-hidden="true" size={15} />
+                            Download
+                          </button>
+                          <button className="danger" type="button" onClick={() => void handleDeleteFile(file)}>
+                            <XCircle aria-hidden="true" size={15} />
+                            Delete
+                          </button>
+                        </div>
+                      </details>
                     </article>
                   ))}
 
