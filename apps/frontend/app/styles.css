@@ -180,6 +180,17 @@ button:disabled {
   text-align: left;
 }
 
+.nav-item span {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+.nav-lock {
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
 .nav-item.active,
 .nav-item:hover {
   background: #253244;
@@ -701,6 +712,71 @@ h1 {
 
 .access-row {
   align-items: start;
+}
+
+.module-placeholder {
+  min-height: 136px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.module-placeholder h2,
+.module-placeholder p {
+  margin: 0;
+}
+
+.module-placeholder p {
+  color: var(--muted);
+  margin-top: 5px;
+}
+
+.module-status-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: var(--primary);
+  background: #eaf8f1;
+  flex-shrink: 0;
+}
+
+.module-health-list,
+.module-activity-list {
+  max-width: 920px;
+}
+
+.module-workbench {
+  max-width: 980px;
+}
+
+.module-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.module-status-grid article {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 14px;
+}
+
+.module-status-grid strong,
+.module-status-grid span {
+  display: block;
+}
+
+.module-status-grid strong {
+  font-size: 13px;
+}
+
+.module-status-grid span {
+  color: var(--muted);
+  margin-top: 5px;
+  font-size: 13px;
 }
 
 .request-list {

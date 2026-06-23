@@ -33,18 +33,20 @@ import {
 } from "lucide-react";
 
 const modules = [
-  { name: "Dashboard", icon: Gauge, active: true },
-  { name: "Repository", icon: FolderTree },
-  { name: "Departments", icon: Building2 },
-  { name: "Projects", icon: FileText },
-  { name: "Users", icon: Users },
-  { name: "Roles & RBAC", icon: LockKeyhole },
-  { name: "Audit Logs", icon: History },
-  { name: "Reports", icon: ChartNoAxesCombined },
-  { name: "SMTP", icon: Mail },
-  { name: "System Health", icon: ServerCog },
-  { name: "Settings", icon: Settings }
-];
+  { id: "dashboard", name: "Dashboard", eyebrow: "Executive Cockpit", icon: Gauge },
+  { id: "repository", name: "Repository", eyebrow: "Document Operations", icon: FolderTree },
+  { id: "access", name: "Access Requests", eyebrow: "Approval Workflow", icon: KeyRound },
+  { id: "departments", name: "Departments", eyebrow: "Organization Master", icon: Building2 },
+  { id: "users", name: "Users", eyebrow: "Identity Administration", icon: Users },
+  { id: "roles", name: "Roles & RBAC", eyebrow: "Security Matrix", icon: LockKeyhole },
+  { id: "audit", name: "Audit Logs", eyebrow: "Compliance Trail", icon: History },
+  { id: "reports", name: "Reports", eyebrow: "Management Information", icon: ChartNoAxesCombined },
+  { id: "smtp", name: "SMTP", eyebrow: "Notification Engine", icon: Mail },
+  { id: "health", name: "System Health", eyebrow: "Operations Console", icon: ServerCog },
+  { id: "settings", name: "Settings", eyebrow: "System Controls", icon: Settings }
+] as const;
+
+type ModuleId = (typeof modules)[number]["id"];
 
 type LoginResponse = {
   accessToken: string;
@@ -366,6 +368,7 @@ export default function Home() {
   const [user, setUser] = useState<LoginResponse["user"] | null>(null);
   const [email, setEmail] = useState("admin@company.com");
   const [password, setPassword] = useState("");
+  const [activeModule, setActiveModule] = useState<ModuleId>("dashboard");
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [data, setData] = useState<AppData | null>(null);
@@ -450,6 +453,20 @@ export default function Home() {
   const canReadUsers = canApproveAccess;
   const canWriteUsers = Boolean(user?.roles.includes("SUPER_ADMIN"));
   const canManageDepartments = Boolean(user?.roles.includes("SUPER_ADMIN"));
+  const activeModuleConfig = modules.find((module) => module.id === activeModule) ?? modules[0];
+  const moduleAccess: Record<ModuleId, boolean> = {
+    dashboard: true,
+    repository: true,
+    access: true,
+    departments: canManageDepartments,
+    users: canReadUsers,
+    roles: canWriteUsers,
+    audit: canApproveAccess,
+    reports: canApproveAccess,
+    smtp: canWriteUsers,
+    health: canApproveAccess,
+    settings: canWriteUsers
+  };
 
   async function loadDashboard(activeToken: string, query = searchQuery, folderId = activeFolderId) {
     setLoading(true);
@@ -560,6 +577,7 @@ export default function Home() {
     const formData = new FormData(event.currentTarget);
     const query = String(formData.get("repositorySearch") ?? "");
     setSearchQuery(query);
+    setActiveModule("repository");
 
     if (token) {
       void loadDashboard(token, query);
@@ -1062,10 +1080,17 @@ export default function Home() {
         <nav className="nav-list" aria-label="Main modules">
           {modules.map((module) => {
             const Icon = module.icon;
+            const hasAccess = moduleAccess[module.id];
             return (
-              <button className={module.active ? "nav-item active" : "nav-item"} key={module.name} type="button">
+              <button
+                className={activeModule === module.id ? "nav-item active" : "nav-item"}
+                key={module.id}
+                type="button"
+                onClick={() => setActiveModule(module.id)}
+              >
                 <Icon aria-hidden="true" size={18} />
                 <span>{module.name}</span>
+                {!hasAccess ? <LockKeyhole aria-hidden="true" className="nav-lock" size={13} /> : null}
               </button>
             );
           })}
@@ -1106,19 +1131,41 @@ export default function Home() {
         <div className="content">
           <section className="page-heading">
             <div>
-              <p className="eyebrow">Enterprise MVP Dashboard</p>
-              <h1>Company File Repository</h1>
+              <p className="eyebrow">{activeModuleConfig.eyebrow}</p>
+              <h1>{activeModuleConfig.name}</h1>
               <p className="page-copy">Signed in as {user.fullName} with {user.roles.join(", ") || "assigned"} access.</p>
             </div>
             <div className="heading-actions">
-              <button className="secondary-button" type="button">
-                <ArchiveRestore aria-hidden="true" size={17} />
-                Recycle Bin
-              </button>
-              <button className="primary-button" type="button" onClick={() => setUploadOpen(true)}>
-                <Upload aria-hidden="true" size={17} />
-                Upload
-              </button>
+              {activeModule === "repository" ? (
+                <>
+                  <button className="secondary-button" type="button">
+                    <ArchiveRestore aria-hidden="true" size={17} />
+                    Recycle Bin
+                  </button>
+                  <button className="primary-button" type="button" onClick={() => setUploadOpen(true)}>
+                    <Upload aria-hidden="true" size={17} />
+                    Upload
+                  </button>
+                </>
+              ) : null}
+              {activeModule === "access" ? (
+                <button className="primary-button" type="button" onClick={() => setAccessModalOpen(true)}>
+                  <KeyRound aria-hidden="true" size={17} />
+                  New Request
+                </button>
+              ) : null}
+              {activeModule === "departments" && canManageDepartments ? (
+                <button className="primary-button" type="button" onClick={openCreateDepartment}>
+                  <Building2 aria-hidden="true" size={17} />
+                  New Department
+                </button>
+              ) : null}
+              {activeModule === "users" && canWriteUsers ? (
+                <button className="primary-button" type="button" onClick={openCreateUser}>
+                  <Users aria-hidden="true" size={17} />
+                  New User
+                </button>
+              ) : null}
             </div>
           </section>
 
@@ -1130,16 +1177,31 @@ export default function Home() {
           {departmentMessage ? <p className="loading-banner">{departmentMessage}</p> : null}
           {loading && !data ? <p className="loading-banner">Loading live repository data...</p> : null}
 
-          <section className="kpi-grid" aria-label="Repository metrics">
-            {kpis.map((kpi) => (
-              <article className="metric" key={kpi.label}>
-                <p>{kpi.label}</p>
-                <strong>{kpi.value}</strong>
-                <span>{kpi.detail}</span>
-              </article>
-            ))}
-          </section>
+          {!moduleAccess[activeModule] ? (
+            <section className="panel module-placeholder">
+              <div className="module-status-icon">
+                <LockKeyhole aria-hidden="true" size={22} />
+              </div>
+              <div>
+                <h2>Access Restricted</h2>
+                <p>Your current role does not include this module.</p>
+              </div>
+            </section>
+          ) : null}
 
+          {activeModule === "dashboard" ? (
+            <section className="kpi-grid" aria-label="Repository metrics">
+              {kpis.map((kpi) => (
+                <article className="metric" key={kpi.label}>
+                  <p>{kpi.label}</p>
+                  <strong>{kpi.value}</strong>
+                  <span>{kpi.detail}</span>
+                </article>
+              ))}
+            </section>
+          ) : null}
+
+          {activeModule === "repository" ? (
           <section className="two-column">
             <article className="panel large-panel">
               <div className="panel-header">
@@ -1259,7 +1321,9 @@ export default function Home() {
               </div>
             </aside>
           </section>
+          ) : null}
 
+          {activeModule === "dashboard" ? (
           <section className="two-column bottom-row">
             <article className="panel">
               <div className="panel-header">
@@ -1295,7 +1359,9 @@ export default function Home() {
               </ol>
             </article>
           </section>
+          ) : null}
 
+          {activeModule === "access" ? (
           <section className="two-column access-row">
             <article className="panel">
               <div className="panel-header">
@@ -1361,8 +1427,9 @@ export default function Home() {
               </div>
             </article>
           </section>
+          ) : null}
 
-          {canManageDepartments ? (
+          {activeModule === "departments" && canManageDepartments ? (
             <section className="panel">
               <div className="panel-header">
                 <div>
@@ -1423,7 +1490,7 @@ export default function Home() {
             </section>
           ) : null}
 
-          {canReadUsers ? (
+          {activeModule === "users" && canReadUsers ? (
             <section className="panel">
               <div className="panel-header">
                 <div>
@@ -1481,6 +1548,80 @@ export default function Home() {
                   </div>
                 ))}
                 {data && data.managedUsers.length === 0 ? <p className="empty-state">No users available for your scope.</p> : null}
+              </div>
+            </section>
+          ) : null}
+
+          {activeModule === "health" && moduleAccess.health ? (
+            <section className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>System Health</h2>
+                  <p>{data?.health.status ?? "loading"}</p>
+                </div>
+                <button className="text-button" type="button" onClick={() => void loadDashboard(token)}>
+                  <RefreshCcw aria-hidden="true" size={15} />
+                  Refresh
+                </button>
+              </div>
+              <div className="health-list module-health-list">
+                {(data?.health.checks ?? []).map((item) => (
+                  <div className="health-item" key={item.name}>
+                    <span><Database size={16} /> {titleCase(item.name)}</span>
+                    <strong className={`health-state ${item.status}`}>{titleCase(item.status)}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {activeModule === "roles" && moduleAccess.roles ? (
+            <section className="panel module-workbench">
+              <div className="panel-header">
+                <div>
+                  <h2>Roles & RBAC</h2>
+                  <p>Permission guard, resource grants, and folder inheritance are active.</p>
+                </div>
+              </div>
+              <div className="module-status-grid">
+                <article><strong>Role Gate</strong><span>Enabled</span></article>
+                <article><strong>Folder Inheritance</strong><span>Enabled</span></article>
+                <article><strong>Access Requests</strong><span>{formatNumber(data?.dashboard.pendingAccessRequests ?? 0)} pending</span></article>
+              </div>
+            </section>
+          ) : null}
+
+          {activeModule === "audit" && moduleAccess.audit ? (
+            <section className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Audit Logs</h2>
+                  <p>{data?.dashboard.recentActivity.length ?? 0} latest events</p>
+                </div>
+              </div>
+              <ol className="activity-list module-activity-list">
+                {(data?.dashboard.recentActivity ?? []).map((activity) => (
+                  <li key={activity.id}>
+                    <strong>{titleCase(activity.action)}</strong>
+                    <span>{activity.entityName ?? activity.actor} · {formatDate(activity.createdAt)}</span>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ) : null}
+
+          {["reports", "smtp", "settings"].includes(activeModule) && moduleAccess[activeModule] ? (
+            <section className="panel module-workbench">
+              <div className="panel-header">
+                <div>
+                  <h2>{activeModuleConfig.name}</h2>
+                  <p>{activeModule === "smtp" ? `SMTP status: ${data?.dashboard.smtpStatus ?? "loading"}` : "Enterprise controls are reserved for the next implementation slice."}</p>
+                </div>
+              </div>
+              <div className="module-status-grid">
+                <article><strong>API Foundation</strong><span>{activeModule === "smtp" ? "Enabled" : "Planned"}</span></article>
+                <article><strong>RBAC Scope</strong><span>Enabled</span></article>
+                <article><strong>Admin UI</strong><span>Queued</span></article>
               </div>
             </section>
           ) : null}
