@@ -1,5 +1,27 @@
-import { Injectable } from "@nestjs/common";
+import { ForbiddenException, Injectable } from "@nestjs/common";
+import { ResourceType, SubjectType } from "@prisma/client";
+import { AuthenticatedUser } from "../auth/auth.guard";
 import { PrismaService } from "../database/prisma.service";
+
+type ResourceAccessInput = {
+  user: AuthenticatedUser;
+  permissionKey: string;
+  resourceType: ResourceType;
+  resourceId: string;
+};
+
+type ResourceScope = {
+  resourceType: ResourceType;
+  resourceId: string;
+  departmentId: string | null;
+  createdById: string | null;
+  inheritedResources: Array<{
+    resourceType: ResourceType;
+    resourceId: string;
+  }>;
+  entityType: string;
+  entityName: string | null;
+};
 
 @Injectable()
 export class RbacService {
@@ -116,5 +138,211 @@ export class RbacService {
   async userHasPermission(userId: string, permissionKey: string) {
     const effective = await this.effectivePermissions(userId);
     return effective.permissions.includes(permissionKey);
+  }
+
+  async assertResourceAccess(input: ResourceAccessInput) {
+    const allowed = await this.canAccessResource(input);
+
+    if (allowed) {
+      return;
+    }
+
+    await this.auditDeniedAccess(input);
+    throw new ForbiddenException("You do not have access to this resource");
+  }
+
+  async canAccessResource(input: ResourceAccessInput) {
+    if (input.user.roles.includes("SUPER_ADMIN")) {
+      return true;
+    }
+
+    const [hasBasePermission, userContext, resource] = await Promise.all([
+      this.userHasPermission(input.user.id, input.permissionKey),
+      this.userAccessContext(input.user.id),
+      this.resourceScope(input.resourceType, input.resourceId)
+    ]);
+
+    if (!hasBasePermission || !userContext || !resource) {
+      return false;
+    }
+
+    if (resource.createdById === input.user.id) {
+      return true;
+    }
+
+    if (
+      input.user.roles.includes("DEPARTMENT_ADMIN") &&
+      resource.departmentId &&
+      resource.departmentId === userContext.departmentId
+    ) {
+      return true;
+    }
+
+    const subjectFilters = [
+      { subjectType: SubjectType.USER, subjectId: input.user.id },
+      ...userContext.roleIds.map((roleId) => ({ subjectType: SubjectType.ROLE, subjectId: roleId })),
+      ...userContext.groupIds.map((groupId) => ({ subjectType: SubjectType.GROUP, subjectId: groupId }))
+    ];
+
+    if (subjectFilters.length === 0) {
+      return false;
+    }
+
+    const resourceFilters = [
+      { resourceType: resource.resourceType, resourceId: resource.resourceId },
+      ...resource.inheritedResources
+    ];
+
+    const matchingAce = await this.prisma.accessControlEntry.findFirst({
+      where: {
+        permissionKey: input.permissionKey,
+        OR: subjectFilters.map((subject) => ({
+          subjectType: subject.subjectType,
+          subjectId: subject.subjectId,
+          OR: resourceFilters.map((target) => ({
+            resourceType: target.resourceType,
+            resourceId: target.resourceId
+          }))
+        }))
+      }
+    });
+
+    return Boolean(matchingAce);
+  }
+
+  private async userAccessContext(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        roles: {
+          include: {
+            role: {
+              select: {
+                id: true
+              }
+            }
+          }
+        },
+        groupLinks: {
+          select: {
+            groupId: true
+          }
+        }
+      }
+    });
+
+    if (!user || user.status !== "ACTIVE") {
+      return null;
+    }
+
+    return {
+      departmentId: user.departmentId,
+      roleIds: user.roles.map((link) => link.role.id),
+      groupIds: user.groupLinks.map((link) => link.groupId)
+    };
+  }
+
+  private async resourceScope(resourceType: ResourceType, resourceId: string): Promise<ResourceScope | null> {
+    if (resourceType === ResourceType.FOLDER) {
+      const folder = await this.prisma.folder.findUnique({
+        where: { id: resourceId },
+        select: {
+          id: true,
+          name: true,
+          parentId: true,
+          departmentId: true,
+          createdById: true,
+          isDeleted: true
+        }
+      });
+
+      if (!folder || folder.isDeleted) {
+        return null;
+      }
+
+      return {
+        resourceType,
+        resourceId: folder.id,
+        departmentId: folder.departmentId,
+        createdById: folder.createdById,
+        inheritedResources: await this.folderAncestorResources(folder.parentId),
+        entityType: "folder",
+        entityName: folder.name
+      };
+    }
+
+    if (resourceType === ResourceType.FILE) {
+      const file = await this.prisma.repositoryFile.findUnique({
+        where: { id: resourceId },
+        select: {
+          id: true,
+          originalName: true,
+          folderId: true,
+          departmentId: true,
+          createdById: true,
+          isDeleted: true
+        }
+      });
+
+      if (!file || file.isDeleted) {
+        return null;
+      }
+
+      return {
+        resourceType,
+        resourceId: file.id,
+        departmentId: file.departmentId,
+        createdById: file.createdById,
+        inheritedResources: [
+          { resourceType: ResourceType.FOLDER, resourceId: file.folderId },
+          ...(await this.folderAncestorResources(file.folderId))
+        ],
+        entityType: "file",
+        entityName: file.originalName
+      };
+    }
+
+    return null;
+  }
+
+  private async folderAncestorResources(folderId: string | null) {
+    const resources: Array<{ resourceType: ResourceType; resourceId: string }> = [];
+    let currentId = folderId;
+
+    while (currentId) {
+      const folder = await this.prisma.folder.findUnique({
+        where: { id: currentId },
+        select: {
+          id: true,
+          parentId: true,
+          isDeleted: true
+        }
+      });
+
+      if (!folder || folder.isDeleted) {
+        break;
+      }
+
+      resources.push({ resourceType: ResourceType.FOLDER, resourceId: folder.id });
+      currentId = folder.parentId;
+    }
+
+    return resources;
+  }
+
+  private async auditDeniedAccess(input: ResourceAccessInput) {
+    const resource = await this.resourceScope(input.resourceType, input.resourceId);
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: input.user.id,
+        action: "ACCESS_DENIED",
+        entityType: resource?.entityType ?? input.resourceType.toLowerCase(),
+        entityId: input.resourceId,
+        entityName: resource?.entityName ?? input.permissionKey,
+        success: false,
+        failureReason: `Missing resource access for ${input.permissionKey}`
+      }
+    });
   }
 }

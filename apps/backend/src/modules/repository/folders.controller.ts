@@ -18,8 +18,9 @@ export class FoldersController {
 
   @Get()
   @RequirePermissions("folder.read")
-  listFolders(@Query("parentId") parentId?: string) {
+  listFolders(@CurrentUser() user: AuthenticatedUser, @Query("parentId") parentId?: string) {
     return this.repository.listFolders({
+      user,
       parentId: parentId?.trim() || null
     });
   }
@@ -29,13 +30,13 @@ export class FoldersController {
   createFolder(@Body() body: CreateFolderBody, @CurrentUser() user: AuthenticatedUser) {
     return this.repository.createFolder({
       ...body,
-      actorUserId: user.id
+      actorUser: user
     });
   }
 
   @Get(":id")
   @RequirePermissions("folder.read")
-  getFolder(@Param("id") id: string) {
-    return this.repository.getFolder(id);
+  getFolder(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.repository.getFolder(id, user);
   }
 }

@@ -20,6 +20,7 @@ export class FilesController {
   @Get()
   @RequirePermissions("file.read")
   listFiles(
+    @CurrentUser() user: AuthenticatedUser,
     @Query("q") q?: string,
     @Query("folderId") folderId?: string,
     @Query("classification") classification?: string,
@@ -29,6 +30,7 @@ export class FilesController {
     @Query("pageSize") pageSize?: string
   ) {
     return this.repository.searchFiles({
+      user,
       q,
       folderId,
       classification: this.parseClassification(classification),
@@ -41,8 +43,8 @@ export class FilesController {
 
   @Get("recent")
   @RequirePermissions("file.read")
-  recentFiles(@Query("limit") limit?: string) {
-    return this.repository.listRecentFiles(limit ? Number(limit) : undefined);
+  recentFiles(@CurrentUser() user: AuthenticatedUser, @Query("limit") limit?: string) {
+    return this.repository.listRecentFiles(user, limit ? Number(limit) : undefined);
   }
 
   @Post("upload")
@@ -67,20 +69,20 @@ export class FilesController {
         classification: this.parseClassification(this.getFieldValue(file, "classification")),
         description: this.getFieldValue(file, "description")
       },
-      user.id
+      user
     );
   }
 
   @Get(":id")
   @RequirePermissions("file.read")
-  getFile(@Param("id") id: string) {
-    return this.repository.getFile(id);
+  getFile(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.repository.getFile(id, user);
   }
 
   @Get(":id/download")
   @RequirePermissions("file.download")
   async download(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser, @Res() reply: FastifyReply) {
-    const download = await this.repository.prepareDownload(id, user.id);
+    const download = await this.repository.prepareDownload(id, user);
     const encodedName = encodeURIComponent(download.fileName);
 
     reply.header("Content-Type", download.mimeType);

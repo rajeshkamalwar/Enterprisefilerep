@@ -1,8 +1,10 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { FileClassification, Prisma, ScanStatus } from "@prisma/client";
+import { FileClassification, Prisma, ResourceType, ScanStatus } from "@prisma/client";
 import type { MultipartFile } from "@fastify/multipart";
+import { AuthenticatedUser } from "../auth/auth.guard";
 import { PrismaService } from "../database/prisma.service";
 import { ScanQueueService } from "../queue/scan-queue.service";
+import { RbacService } from "../rbac/rbac.service";
 import { LocalStorageService } from "../storage/local-storage.service";
 
 type UploadFields = {
@@ -35,10 +37,20 @@ export class RepositoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly scanQueue: ScanQueueService,
+    private readonly rbac: RbacService,
     private readonly storage: LocalStorageService
   ) {}
 
-  async listFolders(input: { parentId?: string | null } = {}) {
+  async listFolders(input: { parentId?: string | null; user: AuthenticatedUser }) {
+    if (input.parentId) {
+      await this.rbac.assertResourceAccess({
+        user: input.user,
+        permissionKey: "folder.read",
+        resourceType: ResourceType.FOLDER,
+        resourceId: input.parentId
+      });
+    }
+
     const folders = await this.prisma.folder.findMany({
       where: {
         parentId: input.parentId ?? null,
@@ -65,13 +77,19 @@ export class RepositoryService {
       },
       orderBy: { name: "asc" }
     });
+    const accessibleFolders = await this.filterAccessibleFolders(folders, input.user, "folder.read");
 
     return {
-      data: folders.map((folder) => this.serializeFolderSummary(folder))
+      data: accessibleFolders.map((folder) => this.serializeFolderSummary(folder))
     };
   }
 
-  async createFolder(input: { name: string; parentId?: string; departmentId?: string; actorUserId: string }) {
+  async createFolder(input: {
+    name: string;
+    parentId?: string;
+    departmentId?: string;
+    actorUser: AuthenticatedUser;
+  }) {
     const folderName = input.name.trim();
 
     if (!folderName) {
@@ -86,19 +104,28 @@ export class RepositoryService {
       throw new NotFoundException("Parent folder not found");
     }
 
+    if (parent) {
+      await this.rbac.assertResourceAccess({
+        user: input.actorUser,
+        permissionKey: "folder.create",
+        resourceType: ResourceType.FOLDER,
+        resourceId: parent.id
+      });
+    }
+
     const folder = await this.prisma.folder.create({
       data: {
         name: input.name.trim(),
         parentId: input.parentId,
         departmentId: input.departmentId ?? parent?.departmentId,
-        createdById: input.actorUserId,
+        createdById: input.actorUser.id,
         pathCache: parent?.pathCache ? `${parent.pathCache}/${folderName}` : folderName
       }
     });
 
     await this.prisma.auditLog.create({
       data: {
-        actorUserId: input.actorUserId,
+        actorUserId: input.actorUser.id,
         action: "FOLDER_CREATED",
         entityType: "folder",
         entityId: folder.id,
@@ -109,7 +136,7 @@ export class RepositoryService {
     return folder;
   }
 
-  async getFolder(id: string) {
+  async getFolder(id: string, user: AuthenticatedUser) {
     const folder = await this.prisma.folder.findUnique({
       where: { id },
       include: {
@@ -171,15 +198,27 @@ export class RepositoryService {
       throw new NotFoundException("Folder not found");
     }
 
+    await this.rbac.assertResourceAccess({
+      user,
+      permissionKey: "folder.read",
+      resourceType: ResourceType.FOLDER,
+      resourceId: folder.id
+    });
+
+    const [accessibleChildren, accessibleFiles] = await Promise.all([
+      this.filterAccessibleFolders(folder.children, user, "folder.read"),
+      this.filterAccessibleFiles(folder.files, user, "file.read")
+    ]);
+
     return {
       folder: this.serializeFolder(folder),
       breadcrumbs: await this.folderBreadcrumbs(folder.id),
-      children: folder.children.map((child) => this.serializeFolderSummary(child)),
-      files: folder.files.map((file) => this.serializeFile(file))
+      children: accessibleChildren.map((child) => this.serializeFolderSummary(child)),
+      files: accessibleFiles.map((file) => this.serializeFile(file))
     };
   }
 
-  async listRecentFiles(limit = 20) {
+  async listRecentFiles(user: AuthenticatedUser, limit = 20) {
     const take = Math.min(Math.max(limit, 1), 100);
     const files = await this.prisma.repositoryFile.findMany({
       where: { isDeleted: false },
@@ -187,13 +226,14 @@ export class RepositoryService {
       orderBy: { updatedAt: "desc" },
       take
     });
+    const accessibleFiles = await this.filterAccessibleFiles(files, user, "file.read");
 
     return {
-      data: files.map((file) => this.serializeFile(file))
+      data: accessibleFiles.map((file) => this.serializeFile(file))
     };
   }
 
-  async searchFiles(input: ListFilesInput) {
+  async searchFiles(input: ListFilesInput & { user: AuthenticatedUser }) {
     const page = input.page && input.page > 0 ? input.page : 1;
     const pageSize = input.pageSize && input.pageSize > 0 ? Math.min(input.pageSize, 100) : 25;
     const where: Prisma.RepositoryFileWhereInput = {
@@ -201,6 +241,12 @@ export class RepositoryService {
     };
 
     if (input.folderId) {
+      await this.rbac.assertResourceAccess({
+        user: input.user,
+        permissionKey: "folder.read",
+        resourceType: ResourceType.FOLDER,
+        resourceId: input.folderId
+      });
       where.folderId = input.folderId;
     }
 
@@ -230,19 +276,17 @@ export class RepositoryService {
       ];
     }
 
-    const [files, totalItems] = await this.prisma.$transaction([
-      this.prisma.repositoryFile.findMany({
-        where,
-        include: this.fileListInclude(),
-        orderBy: { updatedAt: "desc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize
-      }),
-      this.prisma.repositoryFile.count({ where })
-    ]);
+    const files = await this.prisma.repositoryFile.findMany({
+      where,
+      include: this.fileListInclude(),
+      orderBy: { updatedAt: "desc" }
+    });
+    const accessibleFiles = await this.filterAccessibleFiles(files, input.user, "file.read");
+    const totalItems = accessibleFiles.length;
+    const pageFiles = accessibleFiles.slice((page - 1) * pageSize, page * pageSize);
 
     return {
-      data: files.map((file) => this.serializeFile(file)),
+      data: pageFiles.map((file) => this.serializeFile(file)),
       pagination: {
         page,
         pageSize,
@@ -252,7 +296,7 @@ export class RepositoryService {
     };
   }
 
-  async upload(file: MultipartFile, fields: UploadFields, actorUserId: string) {
+  async upload(file: MultipartFile, fields: UploadFields, actorUser: AuthenticatedUser) {
     const extension = this.extensionFromName(file.filename);
 
     if (extension && this.blockedExtensions.has(extension)) {
@@ -266,6 +310,13 @@ export class RepositoryService {
     if (!folder || folder.isDeleted) {
       throw new NotFoundException("Folder not found");
     }
+
+    await this.rbac.assertResourceAccess({
+      user: actorUser,
+      permissionKey: "file.create",
+      resourceType: ResourceType.FOLDER,
+      resourceId: folder.id
+    });
 
     const stored = await this.storage.saveToQuarantine({
       stream: file.file,
@@ -282,7 +333,7 @@ export class RepositoryService {
           classification: fields.classification ?? "INTERNAL",
           description: fields.description,
           departmentId: folder.departmentId,
-          createdById: actorUserId
+          createdById: actorUser.id
         }
       });
 
@@ -297,7 +348,7 @@ export class RepositoryService {
           mimeType: file.mimetype,
           scanStatus: "PENDING",
           previewStatus: "PENDING",
-          uploadedById: actorUserId
+          uploadedById: actorUser.id
         }
       });
 
@@ -309,7 +360,7 @@ export class RepositoryService {
 
       await tx.auditLog.create({
         data: {
-          actorUserId,
+          actorUserId: actorUser.id,
           action: "FILE_UPLOADED",
           entityType: "file",
           entityId: repositoryFile.id,
@@ -348,7 +399,7 @@ export class RepositoryService {
     }
   }
 
-  async getFile(id: string) {
+  async getFile(id: string, user: AuthenticatedUser) {
     const file = await this.prisma.repositoryFile.findUnique({
       where: { id },
       include: {
@@ -384,10 +435,17 @@ export class RepositoryService {
       throw new NotFoundException("File not found");
     }
 
+    await this.rbac.assertResourceAccess({
+      user,
+      permissionKey: "file.read",
+      resourceType: ResourceType.FILE,
+      resourceId: file.id
+    });
+
     return this.serializeFile(file);
   }
 
-  async prepareDownload(id: string, actorUserId: string) {
+  async prepareDownload(id: string, user: AuthenticatedUser) {
     const file = await this.prisma.repositoryFile.findUnique({
       where: { id },
       include: { currentVersion: true }
@@ -397,13 +455,20 @@ export class RepositoryService {
       throw new NotFoundException("File not found");
     }
 
+    await this.rbac.assertResourceAccess({
+      user,
+      permissionKey: "file.download",
+      resourceType: ResourceType.FILE,
+      resourceId: file.id
+    });
+
     if (file.currentVersion.scanStatus !== ScanStatus.CLEAN) {
       throw new ConflictException("File is not available for download until antivirus scanning marks it clean");
     }
 
     await this.prisma.auditLog.create({
       data: {
-        actorUserId,
+        actorUserId: user.id,
         action: "FILE_DOWNLOADED",
         entityType: "file",
         entityId: file.id,
@@ -416,6 +481,42 @@ export class RepositoryService {
       mimeType: file.currentVersion.mimeType ?? "application/octet-stream",
       stream: await this.storage.openReadStream(file.currentVersion.storagePath)
     };
+  }
+
+  private async filterAccessibleFolders<T extends { id: string }>(
+    folders: T[],
+    user: AuthenticatedUser,
+    permissionKey: string
+  ) {
+    const decisions = await Promise.all(
+      folders.map(async (folder) => ({
+        folder,
+        allowed: await this.rbac.canAccessResource({
+          user,
+          permissionKey,
+          resourceType: ResourceType.FOLDER,
+          resourceId: folder.id
+        })
+      }))
+    );
+
+    return decisions.filter((decision) => decision.allowed).map((decision) => decision.folder);
+  }
+
+  private async filterAccessibleFiles<T extends { id: string }>(files: T[], user: AuthenticatedUser, permissionKey: string) {
+    const decisions = await Promise.all(
+      files.map(async (file) => ({
+        file,
+        allowed: await this.rbac.canAccessResource({
+          user,
+          permissionKey,
+          resourceType: ResourceType.FILE,
+          resourceId: file.id
+        })
+      }))
+    );
+
+    return decisions.filter((decision) => decision.allowed).map((decision) => decision.file);
   }
 
   private extensionFromName(name: string) {
