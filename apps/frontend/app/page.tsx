@@ -1915,33 +1915,35 @@ export default function Home() {
         </header>
 
         <div className="content">
-          <section className="page-heading">
-            <div>
-              <p className="eyebrow">{activeModuleConfig.eyebrow}</p>
-              <h1>{activeModuleConfig.name}</h1>
-              <p className="page-copy">Signed in as {user.fullName} with {user.roles.join(", ") || "assigned"} access.</p>
-            </div>
-            <div className="heading-actions">
-              {activeModule === "access" ? (
-                <button className="primary-button" type="button" onClick={() => setAccessModalOpen(true)}>
-                  <KeyRound aria-hidden="true" size={17} />
-                  New Request
-                </button>
-              ) : null}
-              {activeModule === "departments" && canManageDepartments ? (
-                <button className="primary-button" type="button" onClick={openCreateDepartment}>
-                  <Building2 aria-hidden="true" size={17} />
-                  New Department
-                </button>
-              ) : null}
-              {activeModule === "users" && canWriteUsers ? (
-                <button className="primary-button" type="button" onClick={openCreateUser}>
-                  <Users aria-hidden="true" size={17} />
-                  New User
-                </button>
-              ) : null}
-            </div>
-          </section>
+          {activeModule !== "repository" ? (
+            <section className="page-heading">
+              <div>
+                <p className="eyebrow">{activeModuleConfig.eyebrow}</p>
+                <h1>{activeModuleConfig.name}</h1>
+                <p className="page-copy">Signed in as {user.fullName} with {user.roles.join(", ") || "assigned"} access.</p>
+              </div>
+              <div className="heading-actions">
+                {activeModule === "access" ? (
+                  <button className="primary-button" type="button" onClick={() => setAccessModalOpen(true)}>
+                    <KeyRound aria-hidden="true" size={17} />
+                    New Request
+                  </button>
+                ) : null}
+                {activeModule === "departments" && canManageDepartments ? (
+                  <button className="primary-button" type="button" onClick={openCreateDepartment}>
+                    <Building2 aria-hidden="true" size={17} />
+                    New Department
+                  </button>
+                ) : null}
+                {activeModule === "users" && canWriteUsers ? (
+                  <button className="primary-button" type="button" onClick={openCreateUser}>
+                    <Users aria-hidden="true" size={17} />
+                    New User
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
 
           {error ? <p className="error-banner">{error}</p> : null}
           {uploadMessage ? <p className="loading-banner">{uploadMessage}</p> : null}
