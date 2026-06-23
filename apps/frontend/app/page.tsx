@@ -939,7 +939,7 @@ export default function Home() {
     : data?.userOptions.departments ?? [];
   const currentFolderDepartmentName = currentFolderDepartment
     ? `${currentFolderDepartment.name} (${currentFolderDepartment.code})`
-    : "Unassigned";
+    : "Company-wide";
   const selectedRepositoryDepartment = repositoryDepartmentId
     ? repositoryDepartmentOptions.find((department) => department.id === repositoryDepartmentId) ?? null
     : null;
@@ -2305,12 +2305,10 @@ export default function Home() {
                         <ArrowLeft aria-hidden="true" size={15} />
                         Back to dashboard
                       </button>
-                      <h2>My Documents</h2>
+                      <h2>Company Repository</h2>
                       <div className="repository-location-meta">
-                        <span className="department-chip">
-                          {currentFolderDepartment ? currentFolderDepartment.code : "NO DEPT"}
-                        </span>
-                        <small>{currentFolderDepartmentName}</small>
+                        <span>Scope:</span>
+                        <strong>{currentFolderDepartmentName}</strong>
                       </div>
                       <div className="breadcrumb-list repository-breadcrumbs" aria-label="Folder breadcrumbs">
                         {(data?.folder?.breadcrumbs ?? []).map((crumb) => (
