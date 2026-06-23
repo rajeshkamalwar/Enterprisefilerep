@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
 import type { MultipartFile } from "@fastify/multipart";
 import type { FastifyReply } from "fastify";
 import { FileClassification, ScanStatus } from "@prisma/client";
@@ -47,6 +47,12 @@ export class FilesController {
     return this.repository.listRecentFiles(user, limit ? Number(limit) : undefined);
   }
 
+  @Get("recycle-bin")
+  @RequirePermissions("file.restore")
+  recycleBin(@CurrentUser() user: AuthenticatedUser, @Query("limit") limit?: string) {
+    return this.repository.listFileRecycleBin(user, limit ? Number(limit) : undefined);
+  }
+
   @Post("upload")
   @RequirePermissions("file.create")
   async upload(@Req() request: MultipartRequest, @CurrentUser() user: AuthenticatedUser) {
@@ -89,6 +95,46 @@ export class FilesController {
     reply.header("Content-Disposition", `attachment; filename*=UTF-8''${encodedName}`);
 
     return reply.send(download.stream);
+  }
+
+  @Get(":id/preview")
+  @RequirePermissions("file.preview")
+  async preview(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser, @Res() reply: FastifyReply) {
+    const preview = await this.repository.preparePreview(id, user);
+    const encodedName = encodeURIComponent(preview.fileName);
+
+    reply.header("Content-Type", preview.mimeType);
+    reply.header("Content-Disposition", `inline; filename*=UTF-8''${encodedName}`);
+
+    return reply.send(preview.stream);
+  }
+
+  @Post(":id/restore-version")
+  @RequirePermissions("file.version.restore")
+  restoreVersion(@Param("id") id: string, @Body() body: { versionId: string }, @CurrentUser() user: AuthenticatedUser) {
+    return this.repository.restoreVersion({
+      fileId: id,
+      versionId: body.versionId,
+      user
+    });
+  }
+
+  @Delete(":id")
+  @RequirePermissions("file.delete")
+  deleteFile(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.repository.deleteFile(id, user);
+  }
+
+  @Patch(":id/restore")
+  @RequirePermissions("file.restore")
+  restoreFile(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.repository.restoreFile(id, user);
+  }
+
+  @Delete(":id/permanent")
+  @RequirePermissions("file.delete")
+  permanentlyDeleteFile(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.repository.permanentlyDeleteFile(id, user);
   }
 
   private getFieldValue(file: MultipartFile, name: string) {

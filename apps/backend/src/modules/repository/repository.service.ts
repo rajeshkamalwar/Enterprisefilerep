@@ -571,6 +571,368 @@ export class RepositoryService {
     };
   }
 
+  async preparePreview(id: string, user: AuthenticatedUser) {
+    const file = await this.prisma.repositoryFile.findUnique({
+      where: { id },
+      include: { currentVersion: true }
+    });
+
+    if (!file || file.isDeleted || !file.currentVersion) {
+      throw new NotFoundException("File not found");
+    }
+
+    await this.rbac.assertResourceAccess({
+      user,
+      permissionKey: "file.preview",
+      resourceType: ResourceType.FILE,
+      resourceId: file.id
+    });
+
+    if (file.currentVersion.scanStatus !== ScanStatus.CLEAN) {
+      throw new ConflictException("File is not available for preview until antivirus scanning marks it clean");
+    }
+
+    const mimeType = file.currentVersion.mimeType ?? file.mimeType ?? "application/octet-stream";
+    const previewable = mimeType.startsWith("image/") ||
+      mimeType.startsWith("text/") ||
+      mimeType === "application/pdf" ||
+      mimeType === "application/json";
+
+    if (!previewable) {
+      throw new ConflictException("Preview is not supported for this file type");
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: user.id,
+        action: "FILE_PREVIEWED",
+        entityType: "file",
+        entityId: file.id,
+        entityName: file.originalName
+      }
+    });
+
+    return {
+      fileName: file.originalName,
+      mimeType,
+      stream: await this.storage.openReadStream(file.currentVersion.storagePath)
+    };
+  }
+
+  async restoreVersion(input: { fileId: string; versionId: string; user: AuthenticatedUser }) {
+    const file = await this.prisma.repositoryFile.findUnique({
+      where: { id: input.fileId },
+      include: {
+        currentVersion: true,
+        versions: {
+          where: { id: input.versionId }
+        }
+      }
+    });
+
+    if (!file || file.isDeleted) {
+      throw new NotFoundException("File not found");
+    }
+
+    const version = file.versions[0];
+
+    if (!version) {
+      throw new NotFoundException("File version not found");
+    }
+
+    await this.rbac.assertResourceAccess({
+      user: input.user,
+      permissionKey: "file.version.restore",
+      resourceType: ResourceType.FILE,
+      resourceId: file.id
+    });
+
+    const updated = await this.prisma.repositoryFile.update({
+      where: { id: file.id },
+      data: {
+        currentVersionId: version.id
+      },
+      include: {
+        currentVersion: true,
+        versions: {
+          orderBy: { versionNumber: "desc" }
+        },
+        folder: {
+          select: {
+            id: true,
+            name: true,
+            pathCache: true
+          }
+        },
+        createdBy: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true
+          }
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+            code: true
+          }
+        }
+      }
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: input.user.id,
+        action: "FILE_VERSION_RESTORED",
+        entityType: "file",
+        entityId: file.id,
+        entityName: file.originalName,
+        oldValueJson: {
+          currentVersionId: file.currentVersionId
+        },
+        newValueJson: {
+          currentVersionId: version.id,
+          versionNumber: version.versionNumber
+        }
+      }
+    });
+
+    return this.serializeFile(updated);
+  }
+
+  async deleteFile(id: string, user: AuthenticatedUser) {
+    const file = await this.prisma.repositoryFile.findUnique({ where: { id } });
+
+    if (!file || file.isDeleted) {
+      throw new NotFoundException("File not found");
+    }
+
+    await this.rbac.assertResourceAccess({
+      user,
+      permissionKey: "file.delete",
+      resourceType: ResourceType.FILE,
+      resourceId: file.id
+    });
+
+    const updated = await this.prisma.repositoryFile.update({
+      where: { id },
+      data: {
+        isDeleted: true,
+        deletedAt: new Date(),
+        deletedById: user.id
+      }
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: user.id,
+        action: "FILE_DELETED",
+        entityType: "file",
+        entityId: file.id,
+        entityName: file.originalName
+      }
+    });
+
+    return this.serializeFile(updated);
+  }
+
+  async restoreFile(id: string, user: AuthenticatedUser) {
+    const file = await this.prisma.repositoryFile.findUnique({ where: { id } });
+
+    if (!file || !file.isDeleted) {
+      throw new NotFoundException("Deleted file not found");
+    }
+
+    const updated = await this.prisma.repositoryFile.update({
+      where: { id },
+      data: {
+        isDeleted: false,
+        deletedAt: null,
+        deletedById: null
+      },
+      include: this.fileListInclude()
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: user.id,
+        action: "FILE_RESTORED",
+        entityType: "file",
+        entityId: file.id,
+        entityName: file.originalName
+      }
+    });
+
+    return this.serializeFile(updated);
+  }
+
+  async permanentlyDeleteFile(id: string, user: AuthenticatedUser) {
+    const file = await this.prisma.repositoryFile.findUnique({ where: { id } });
+
+    if (!file || !file.isDeleted) {
+      throw new NotFoundException("Deleted file not found");
+    }
+
+    await this.prisma.repositoryFile.update({
+      where: { id },
+      data: { currentVersionId: null }
+    });
+    await this.prisma.repositoryFile.delete({ where: { id } });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: user.id,
+        action: "FILE_PERMANENTLY_DELETED",
+        entityType: "file",
+        entityId: file.id,
+        entityName: file.originalName
+      }
+    });
+
+    return { deleted: true, id };
+  }
+
+  async listFileRecycleBin(user: AuthenticatedUser, limit = 50) {
+    const files = await this.prisma.repositoryFile.findMany({
+      where: { isDeleted: true },
+      include: this.fileListInclude(),
+      orderBy: { deletedAt: "desc" },
+      take: Math.min(Math.max(limit, 1), 100)
+    });
+
+    return {
+      data: files.map((file) => this.serializeFile(file))
+    };
+  }
+
+  async deleteFolder(id: string, user: AuthenticatedUser) {
+    const folder = await this.prisma.folder.findUnique({ where: { id } });
+
+    if (!folder || folder.isDeleted) {
+      throw new NotFoundException("Folder not found");
+    }
+
+    await this.rbac.assertResourceAccess({
+      user,
+      permissionKey: "folder.delete",
+      resourceType: ResourceType.FOLDER,
+      resourceId: folder.id
+    });
+
+    const updated = await this.prisma.folder.update({
+      where: { id },
+      data: {
+        isDeleted: true,
+        deletedAt: new Date(),
+        deletedById: user.id
+      }
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: user.id,
+        action: "FOLDER_DELETED",
+        entityType: "folder",
+        entityId: folder.id,
+        entityName: folder.name
+      }
+    });
+
+    return this.serializeFolder(updated);
+  }
+
+  async restoreFolder(id: string, user: AuthenticatedUser) {
+    const folder = await this.prisma.folder.findUnique({ where: { id } });
+
+    if (!folder || !folder.isDeleted) {
+      throw new NotFoundException("Deleted folder not found");
+    }
+
+    const updated = await this.prisma.folder.update({
+      where: { id },
+      data: {
+        isDeleted: false,
+        deletedAt: null,
+        deletedById: null
+      }
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: user.id,
+        action: "FOLDER_RESTORED",
+        entityType: "folder",
+        entityId: folder.id,
+        entityName: folder.name
+      }
+    });
+
+    return this.serializeFolder(updated);
+  }
+
+  async permanentlyDeleteFolder(id: string, user: AuthenticatedUser) {
+    const folder = await this.prisma.folder.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            children: true,
+            files: true
+          }
+        }
+      }
+    });
+
+    if (!folder || !folder.isDeleted) {
+      throw new NotFoundException("Deleted folder not found");
+    }
+
+    if (folder._count.children > 0 || folder._count.files > 0) {
+      throw new ConflictException("Folder must be empty before permanent deletion");
+    }
+
+    await this.prisma.folder.delete({ where: { id } });
+    await this.prisma.auditLog.create({
+      data: {
+        actorUserId: user.id,
+        action: "FOLDER_PERMANENTLY_DELETED",
+        entityType: "folder",
+        entityId: folder.id,
+        entityName: folder.name
+      }
+    });
+
+    return { deleted: true, id };
+  }
+
+  async listFolderRecycleBin(user: AuthenticatedUser, limit = 50) {
+    const folders = await this.prisma.folder.findMany({
+      where: { isDeleted: true },
+      include: {
+        _count: {
+          select: {
+            children: true,
+            files: true
+          }
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
+            code: true
+          }
+        }
+      },
+      orderBy: { deletedAt: "desc" },
+      take: Math.min(Math.max(limit, 1), 100)
+    });
+
+    return {
+      data: folders.map((folder) => this.serializeFolderSummary(folder))
+    };
+  }
+
   private async filterAccessibleFolders<T extends { id: string }>(
     folders: T[],
     user: AuthenticatedUser,

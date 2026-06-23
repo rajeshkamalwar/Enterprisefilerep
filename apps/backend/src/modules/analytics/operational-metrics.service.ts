@@ -120,6 +120,200 @@ export class OperationalMetricsService {
     };
   }
 
+  async fileInventoryReport() {
+    const files = await this.prisma.repositoryFile.findMany({
+      where: { isDeleted: false },
+      include: {
+        currentVersion: true,
+        folder: {
+          select: {
+            pathCache: true
+          }
+        },
+        department: {
+          select: {
+            name: true,
+            code: true
+          }
+        },
+        createdBy: {
+          select: {
+            fullName: true,
+            email: true
+          }
+        }
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 500
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      rowCount: files.length,
+      data: files.map((file) => ({
+        id: file.id,
+        name: file.originalName,
+        extension: file.extension,
+        classification: file.classification,
+        folder: file.folder.pathCache,
+        department: file.department?.name ?? null,
+        owner: file.createdBy.fullName,
+        sizeBytes: file.currentVersion?.sizeBytes.toString() ?? "0",
+        scanStatus: file.currentVersion?.scanStatus ?? null,
+        updatedAt: file.updatedAt
+      }))
+    };
+  }
+
+  async userActivityReport() {
+    const users = await this.prisma.user.findMany({
+      include: {
+        department: {
+          select: {
+            name: true,
+            code: true
+          }
+        },
+        roles: {
+          include: {
+            role: true
+          }
+        },
+        _count: {
+          select: {
+            createdFiles: true,
+            requestedAccess: true
+          }
+        }
+      },
+      orderBy: { fullName: "asc" },
+      take: 500
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      rowCount: users.length,
+      data: users.map((user) => ({
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        status: user.status,
+        department: user.department?.name ?? null,
+        roles: user.roles.map((link) => link.role.name),
+        uploadedFiles: user._count.createdFiles,
+        accessRequests: user._count.requestedAccess,
+        lastLoginAt: user.lastLoginAt
+      }))
+    };
+  }
+
+  async activityReport() {
+    const logs = await this.prisma.auditLog.findMany({
+      include: {
+        actor: {
+          select: {
+            fullName: true,
+            email: true
+          }
+        }
+      },
+      orderBy: { createdAt: "desc" },
+      take: 500
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      rowCount: logs.length,
+      data: logs.map((log) => ({
+        id: log.id,
+        actor: log.actor?.fullName ?? log.actor?.email ?? "System",
+        action: log.action,
+        entityType: log.entityType,
+        entityName: log.entityName,
+        success: log.success,
+        failureReason: log.failureReason,
+        createdAt: log.createdAt
+      }))
+    };
+  }
+
+  async permissionsReport() {
+    const roles = await this.prisma.role.findMany({
+      include: {
+        permissions: true,
+        _count: {
+          select: {
+            users: true
+          }
+        }
+      },
+      orderBy: { name: "asc" }
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      rowCount: roles.length,
+      data: roles.map((role) => ({
+        id: role.id,
+        code: role.code,
+        name: role.name,
+        isSystemRole: role.isSystemRole,
+        userCount: role._count.users,
+        permissionCount: role.permissions.length,
+        permissions: role.permissions.map((permission) => permission.permissionKey).sort()
+      }))
+    };
+  }
+
+  async malwareReport() {
+    const versions = await this.prisma.fileVersion.findMany({
+      where: {
+        scanStatus: {
+          in: ["INFECTED", "FAILED"]
+        }
+      },
+      include: {
+        file: {
+          select: {
+            id: true,
+            originalName: true,
+            isDeleted: true
+          }
+        }
+      },
+      orderBy: { uploadedAt: "desc" },
+      take: 500
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      rowCount: versions.length,
+      data: versions.map((version) => ({
+        versionId: version.id,
+        fileId: version.fileId,
+        fileName: version.file.originalName,
+        fileDeleted: version.file.isDeleted,
+        scanStatus: version.scanStatus,
+        uploadedAt: version.uploadedAt
+      }))
+    };
+  }
+
+  async backupReport() {
+    const storage = await this.storageSummary();
+
+    return {
+      generatedAt: new Date().toISOString(),
+      status: this.backupStatus(),
+      destination: process.env.BACKUP_DESTINATION ?? null,
+      storage: {
+        usedBytes: storage.usedBytes,
+        quotaBytes: storage.quotaBytes,
+        quotaUsedPercent: storage.quotaUsedPercent
+      }
+    };
+  }
+
   private async userCounts() {
     const grouped = await this.prisma.user.groupBy({
       by: ["status"],

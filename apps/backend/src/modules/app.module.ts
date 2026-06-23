@@ -20,6 +20,8 @@ import { RbacController } from "./rbac/rbac.controller";
 import { PermissionsGuard } from "./rbac/permissions.guard";
 import { RbacService } from "./rbac/rbac.service";
 import { ReportsController } from "./reports/reports.controller";
+import { EmailTemplatesController } from "./smtp/email-templates.controller";
+import { SettingsController } from "./settings/settings.controller";
 import { SmtpController } from "./smtp/smtp.controller";
 import { UsersController } from "./users/users.controller";
 import { RepositoryService } from "./repository/repository.service";
@@ -50,6 +52,8 @@ import { UsersService } from "./users/users.service";
     HealthController,
     RbacController,
     ReportsController,
+    EmailTemplatesController,
+    SettingsController,
     SmtpController,
     UsersController
   ],

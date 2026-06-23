@@ -35,6 +35,7 @@ import {
 const modules = [
   { id: "dashboard", name: "Dashboard", eyebrow: "Executive Cockpit", icon: Gauge },
   { id: "repository", name: "Repository", eyebrow: "Document Operations", icon: FolderTree },
+  { id: "recycle", name: "Recycle Bin", eyebrow: "Recovery Console", icon: ArchiveRestore },
   { id: "access", name: "Access Requests", eyebrow: "Approval Workflow", icon: KeyRound },
   { id: "departments", name: "Departments", eyebrow: "Organization Master", icon: Building2 },
   { id: "users", name: "Users", eyebrow: "Identity Administration", icon: Users },
@@ -140,10 +141,22 @@ type RepositoryFile = {
     code: string;
   } | null;
   currentVersion?: {
+    id?: string;
+    versionNumber?: number;
     sizeBytes: string;
     scanStatus: string;
+    previewStatus?: string;
     uploadedAt: string;
   } | null;
+  versions?: Array<{
+    id: string;
+    versionNumber: number;
+    sizeBytes: string;
+    checksumSha256: string;
+    scanStatus: string;
+    previewStatus: string;
+    uploadedAt: string;
+  }>;
 };
 
 type FolderDetail = {
@@ -180,6 +193,13 @@ type AppData = {
   smtpSettings: SmtpSettings | null;
   smtpQueue: EmailQueueCounts | null;
   smtpDeliveryLogs: EmailDeliveryLog[];
+  roles: RoleSummary[];
+  permissions: PermissionSummary[];
+  reportCards: ReportCard[];
+  deletedFiles: RepositoryFile[];
+  deletedFolders: FolderSummary[];
+  systemSettings: SystemSettings | null;
+  emailTemplates: EmailTemplate[];
 };
 
 type UploadResult = RepositoryFile & {
@@ -322,6 +342,51 @@ type EmailDeliveryLog = {
   createdAt: string;
 };
 
+type RoleSummary = {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  isSystemRole: boolean;
+  permissions: Array<{
+    permissionKey: string;
+  }>;
+};
+
+type PermissionSummary = {
+  key: string;
+  description: string | null;
+};
+
+type ReportCard = {
+  key: string;
+  title: string;
+  summary: string;
+  count: number | null;
+};
+
+type SystemSettings = {
+  storageDriver: string;
+  localStorageRoot: string;
+  maxUploadBytes: number;
+  storageQuotaBytes: number;
+  storageWarningThresholdPercent: number;
+  backupDestination: string | null;
+  appUrl: string;
+  apiUrl: string;
+};
+
+type EmailTemplate = {
+  id: string;
+  templateKey: string;
+  subject: string;
+  htmlBody: string;
+  textBody: string;
+  isEnabled: boolean;
+  updatedAt: string;
+  createdAt: string;
+};
+
 const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
 const emptyDashboard: Dashboard = {
@@ -456,6 +521,38 @@ async function apiRequest<T>(path: string, token?: string, init: RequestInit = {
   return response.json() as Promise<T>;
 }
 
+async function loadReportCards(token: string): Promise<ReportCard[]> {
+  const reportDefinitions = [
+    { key: "storage", title: "Storage Report", path: "/reports/storage" },
+    { key: "file-inventory", title: "File Inventory", path: "/reports/file-inventory" },
+    { key: "users", title: "User Activity", path: "/reports/users" },
+    { key: "activity", title: "Activity Report", path: "/reports/activity" },
+    { key: "permissions", title: "Permissions Report", path: "/reports/permissions" },
+    { key: "malware", title: "Malware Report", path: "/reports/malware" },
+    { key: "backup", title: "Backup Report", path: "/reports/backup" }
+  ];
+
+  const results = await Promise.all(
+    reportDefinitions.map(async (definition) => {
+      const report = await apiRequest<Record<string, unknown>>(definition.path, token);
+      const count = typeof report.rowCount === "number"
+        ? report.rowCount
+        : Array.isArray(report.data)
+          ? report.data.length
+          : null;
+
+      return {
+        key: definition.key,
+        title: definition.title,
+        summary: String(report.generatedAt ?? report.status ?? "Ready"),
+        count
+      };
+    })
+  );
+
+  return results;
+}
+
 async function uploadRequest(path: string, token: string, body: FormData) {
   const response = await fetch(`${apiBase}${path}`, {
     method: "POST",
@@ -489,6 +586,9 @@ export default function Home() {
   const [password, setPassword] = useState("");
   const [activeModule, setActiveModule] = useState<ModuleId>("dashboard");
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchClassification, setSearchClassification] = useState("");
+  const [searchScanStatus, setSearchScanStatus] = useState("");
+  const [searchExtension, setSearchExtension] = useState("");
   const [auditQuery, setAuditQuery] = useState("");
   const [auditAction, setAuditAction] = useState("");
   const [auditSuccess, setAuditSuccess] = useState("all");
@@ -503,6 +603,26 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<RepositoryFile | null>(null);
+  const [fileDetailOpen, setFileDetailOpen] = useState(false);
+  const [fileActionMessage, setFileActionMessage] = useState<string | null>(null);
+  const [rolePermissionRoleId, setRolePermissionRoleId] = useState("");
+  const [rolePermissionKey, setRolePermissionKey] = useState("");
+  const [roleName, setRoleName] = useState("");
+  const [roleCode, setRoleCode] = useState("");
+  const [roleDescription, setRoleDescription] = useState("");
+  const [roleSaving, setRoleSaving] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsQuotaGb, setSettingsQuotaGb] = useState("");
+  const [settingsUploadMb, setSettingsUploadMb] = useState("");
+  const [settingsWarning, setSettingsWarning] = useState("80");
+  const [settingsBackup, setSettingsBackup] = useState("");
+  const [templateEditing, setTemplateEditing] = useState<EmailTemplate | null>(null);
+  const [templateSubject, setTemplateSubject] = useState("");
+  const [templateTextBody, setTemplateTextBody] = useState("");
+  const [templateHtmlBody, setTemplateHtmlBody] = useState("");
+  const [templateEnabled, setTemplateEnabled] = useState(true);
+  const [templateSaving, setTemplateSaving] = useState(false);
   const [folderModalOpen, setFolderModalOpen] = useState(false);
   const [editingFolder, setEditingFolder] = useState<FolderSummary | FolderDetail["folder"] | null>(null);
   const [folderName, setFolderName] = useState("");
@@ -587,6 +707,17 @@ export default function Home() {
     setSmtpReplyTo(data.smtpSettings.replyTo ?? "");
   }, [data?.smtpSettings]);
 
+  useEffect(() => {
+    if (!data?.systemSettings) {
+      return;
+    }
+
+    setSettingsQuotaGb(bytesStringToGb(String(data.systemSettings.storageQuotaBytes)));
+    setSettingsUploadMb((data.systemSettings.maxUploadBytes / 1024 / 1024).toFixed(0));
+    setSettingsWarning(String(data.systemSettings.storageWarningThresholdPercent));
+    setSettingsBackup(data.systemSettings.backupDestination ?? "");
+  }, [data?.systemSettings]);
+
   const kpis = useMemo(() => {
     if (!data) {
       return [];
@@ -608,6 +739,7 @@ export default function Home() {
   const moduleAccess: Record<ModuleId, boolean> = {
     dashboard: true,
     repository: true,
+    recycle: canWriteUsers,
     access: true,
     departments: canManageDepartments,
     users: canReadUsers,
@@ -629,6 +761,20 @@ export default function Home() {
     setError(null);
 
     try {
+      const fileParams = new URLSearchParams({ pageSize: "8" });
+      if (query.trim()) {
+        fileParams.set("q", query.trim());
+      }
+      if (searchClassification) {
+        fileParams.set("classification", searchClassification);
+      }
+      if (searchScanStatus) {
+        fileParams.set("scanStatus", searchScanStatus);
+      }
+      if (searchExtension.trim()) {
+        fileParams.set("extension", searchExtension.trim());
+      }
+
       const dashboardRequest = apiRequest<Dashboard>("/admin/dashboard", activeToken).catch((caught) => {
         if (caught instanceof ApiError && caught.status === 403) {
           return emptyDashboard;
@@ -650,12 +796,19 @@ export default function Home() {
         auditLogs,
         smtpSettings,
         smtpQueue,
-        smtpDeliveryLogs
+        smtpDeliveryLogs,
+        roles,
+        permissions,
+        reportCards,
+        deletedFiles,
+        deletedFolders,
+        systemSettings,
+        emailTemplates
       ] = await Promise.all([
         dashboardRequest,
         apiRequest<HealthResponse>("/health"),
         apiRequest<{ data: FolderSummary[] }>("/folders", activeToken),
-        apiRequest<{ data: RepositoryFile[] }>(`/files?pageSize=8${query.trim() ? `&q=${encodeURIComponent(query.trim())}` : ""}`, activeToken),
+        apiRequest<{ data: RepositoryFile[] }>(`/files?${fileParams.toString()}`, activeToken),
         apiRequest<{ data: AccessRequest[] }>("/access-requests/mine?pageSize=5", activeToken),
         canApproveAccess
           ? apiRequest<{ data: AccessRequest[] }>("/access-requests?status=PENDING&pageSize=5", activeToken)
@@ -670,7 +823,14 @@ export default function Home() {
         canWriteUsers ? apiRequest<EmailQueueCounts>("/settings/smtp/queue", activeToken) : Promise.resolve(null),
         canWriteUsers
           ? apiRequest<{ data: EmailDeliveryLog[] }>("/settings/smtp/delivery-logs", activeToken)
-          : Promise.resolve({ data: [] })
+          : Promise.resolve({ data: [] }),
+        canWriteUsers ? apiRequest<{ data: RoleSummary[] }>("/roles", activeToken) : Promise.resolve({ data: [] }),
+        canWriteUsers ? apiRequest<{ data: PermissionSummary[] }>("/permissions", activeToken) : Promise.resolve({ data: [] }),
+        canApproveAccess ? loadReportCards(activeToken) : Promise.resolve([]),
+        canWriteUsers ? apiRequest<{ data: RepositoryFile[] }>("/files/recycle-bin", activeToken) : Promise.resolve({ data: [] }),
+        canWriteUsers ? apiRequest<{ data: FolderSummary[] }>("/folders/recycle-bin", activeToken) : Promise.resolve({ data: [] }),
+        canWriteUsers ? apiRequest<SystemSettings>("/settings/system", activeToken) : Promise.resolve(null),
+        canWriteUsers ? apiRequest<{ data: EmailTemplate[] }>("/settings/email-templates", activeToken) : Promise.resolve({ data: [] })
       ]);
 
       const selectedFolderId = folderId ?? roots.data[0]?.id ?? null;
@@ -695,7 +855,14 @@ export default function Home() {
         auditMeta: auditLogs.meta,
         smtpSettings,
         smtpQueue,
-        smtpDeliveryLogs: smtpDeliveryLogs.data
+        smtpDeliveryLogs: smtpDeliveryLogs.data,
+        roles: roles.data,
+        permissions: permissions.data,
+        reportCards,
+        deletedFiles: deletedFiles.data,
+        deletedFolders: deletedFolders.data,
+        systemSettings,
+        emailTemplates: emailTemplates.data
       });
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) {
@@ -934,6 +1101,238 @@ export default function Home() {
       setError(caught instanceof Error ? caught.message : "Download failed");
     } finally {
       setDownloadingFileId(null);
+    }
+  }
+
+  async function handleOpenFile(file: RepositoryFile) {
+    if (!token) {
+      setError("Please sign in before opening files.");
+      return;
+    }
+
+    setError(null);
+    try {
+      const detail = await apiRequest<RepositoryFile>(`/files/${file.id}`, token);
+      setSelectedFile(detail);
+      setFileDetailOpen(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to open file");
+    }
+  }
+
+  async function handlePreviewFile(file: RepositoryFile) {
+    if (!token) {
+      setError("Please sign in before previewing files.");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${apiBase}/files/${file.id}/preview`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Preview failed: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Preview failed");
+    }
+  }
+
+  async function handleRestoreVersion(versionId: string) {
+    if (!token || !selectedFile) {
+      return;
+    }
+
+    setFileActionMessage(null);
+    setError(null);
+
+    try {
+      const updated = await apiRequest<RepositoryFile>(`/files/${selectedFile.id}/restore-version`, token, {
+        method: "POST",
+        body: JSON.stringify({ versionId })
+      });
+      setSelectedFile(updated);
+      setFileActionMessage("Version restored.");
+      await loadDashboard(token, searchQuery, activeFolderId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to restore version");
+    }
+  }
+
+  async function handleDeleteFile(file: RepositoryFile) {
+    if (!token) {
+      return;
+    }
+
+    try {
+      await apiRequest(`/files/${file.id}`, token, { method: "DELETE" });
+      setFileActionMessage("File moved to recycle bin.");
+      await loadDashboard(token, searchQuery, activeFolderId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to delete file");
+    }
+  }
+
+  async function handleRestoreRecycleFile(fileId: string) {
+    if (!token) {
+      return;
+    }
+
+    await apiRequest(`/files/${fileId}/restore`, token, { method: "PATCH" });
+    await loadDashboard(token, searchQuery, activeFolderId);
+  }
+
+  async function handlePermanentDeleteFile(fileId: string) {
+    if (!token) {
+      return;
+    }
+
+    await apiRequest(`/files/${fileId}/permanent`, token, { method: "DELETE" });
+    await loadDashboard(token, searchQuery, activeFolderId);
+  }
+
+  async function handleRestoreRecycleFolder(folderId: string) {
+    if (!token) {
+      return;
+    }
+
+    await apiRequest(`/folders/${folderId}/restore`, token, { method: "PATCH" });
+    await loadDashboard(token, searchQuery, activeFolderId);
+  }
+
+  async function handlePermanentDeleteFolder(folderId: string) {
+    if (!token) {
+      return;
+    }
+
+    await apiRequest(`/folders/${folderId}/permanent`, token, { method: "DELETE" });
+    await loadDashboard(token, searchQuery, activeFolderId);
+  }
+
+  async function handleAssignRolePermission(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!token || !rolePermissionRoleId || !rolePermissionKey) {
+      return;
+    }
+
+    setRoleSaving(true);
+    setError(null);
+
+    try {
+      await apiRequest(`/roles/${rolePermissionRoleId}/permissions`, token, {
+        method: "POST",
+        body: JSON.stringify({ permissionKey: rolePermissionKey })
+      });
+      await loadDashboard(token, searchQuery, activeFolderId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to assign permission");
+    } finally {
+      setRoleSaving(false);
+    }
+  }
+
+  async function handleCreateRole(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!token || !roleName.trim() || !roleCode.trim()) {
+      return;
+    }
+
+    setRoleSaving(true);
+    setError(null);
+
+    try {
+      await apiRequest("/roles", token, {
+        method: "POST",
+        body: JSON.stringify({
+          name: roleName.trim(),
+          code: roleCode.trim(),
+          description: roleDescription.trim() || undefined
+        })
+      });
+      setRoleName("");
+      setRoleCode("");
+      setRoleDescription("");
+      await loadDashboard(token, searchQuery, activeFolderId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to create role");
+    } finally {
+      setRoleSaving(false);
+    }
+  }
+
+  async function handleSaveSystemSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!token) {
+      return;
+    }
+
+    setSettingsSaving(true);
+    setError(null);
+
+    try {
+      await apiRequest<SystemSettings>("/settings/system", token, {
+        method: "PATCH",
+        body: JSON.stringify({
+          maxUploadBytes: Math.round(Number(settingsUploadMb || 0) * 1024 * 1024),
+          storageQuotaBytes: gbInputToBytes(settingsQuotaGb) ?? 0,
+          storageWarningThresholdPercent: Number(settingsWarning),
+          backupDestination: settingsBackup
+        })
+      });
+      await loadDashboard(token, searchQuery, activeFolderId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to save system settings");
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
+  function openTemplateEditor(template: EmailTemplate) {
+    setTemplateEditing(template);
+    setTemplateSubject(template.subject);
+    setTemplateTextBody(template.textBody);
+    setTemplateHtmlBody(template.htmlBody);
+    setTemplateEnabled(template.isEnabled);
+  }
+
+  async function handleSaveTemplate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!token || !templateEditing) {
+      return;
+    }
+
+    setTemplateSaving(true);
+    setError(null);
+
+    try {
+      await apiRequest<EmailTemplate>(`/settings/email-templates/${templateEditing.id}`, token, {
+        method: "PATCH",
+        body: JSON.stringify({
+          subject: templateSubject,
+          textBody: templateTextBody,
+          htmlBody: templateHtmlBody,
+          isEnabled: templateEnabled
+        })
+      });
+      setTemplateEditing(null);
+      await loadDashboard(token, searchQuery, activeFolderId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to save template");
+    } finally {
+      setTemplateSaving(false);
     }
   }
 
@@ -1393,7 +1792,7 @@ export default function Home() {
             <div className="heading-actions">
               {activeModule === "repository" ? (
                 <>
-                  <button className="secondary-button" type="button">
+                  <button className="secondary-button" type="button" onClick={() => setActiveModule("recycle")}>
                     <ArchiveRestore aria-hidden="true" size={17} />
                     Recycle Bin
                   </button>
@@ -1496,6 +1895,47 @@ export default function Home() {
                 ))}
               </div>
 
+              <form className="module-filter-bar" onSubmit={handleSearch}>
+                <label>
+                  <span>Search</span>
+                  <input
+                    name="repositorySearch"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Name, extension, description"
+                  />
+                </label>
+                <label>
+                  <span>Classification</span>
+                  <select value={searchClassification} onChange={(event) => setSearchClassification(event.target.value)}>
+                    <option value="">All</option>
+                    <option value="PUBLIC_INTERNAL">Public Internal</option>
+                    <option value="INTERNAL">Internal</option>
+                    <option value="CONFIDENTIAL">Confidential</option>
+                    <option value="RESTRICTED">Restricted</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Scan</span>
+                  <select value={searchScanStatus} onChange={(event) => setSearchScanStatus(event.target.value)}>
+                    <option value="">All</option>
+                    <option value="PENDING">Pending</option>
+                    <option value="SCANNING">Scanning</option>
+                    <option value="CLEAN">Clean</option>
+                    <option value="INFECTED">Infected</option>
+                    <option value="FAILED">Failed</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Ext</span>
+                  <input value={searchExtension} onChange={(event) => setSearchExtension(event.target.value)} placeholder="pdf" />
+                </label>
+                <button className="primary-button" type="submit">
+                  <Search aria-hidden="true" size={16} />
+                  Apply
+                </button>
+              </form>
+
               <div className="toolbar">
                 <button type="button">{data?.roots.length ?? 0} root folders</button>
                 <button type="button">{data?.folder?.children.length ?? 0} child folders</button>
@@ -1545,7 +1985,24 @@ export default function Home() {
                       </span>
                     </span>
                     <span role="cell">{formatDate(file.updatedAt)}</span>
-                    <span role="cell">
+                    <span role="cell" className="table-actions">
+                      <button
+                        className="row-icon-button"
+                        type="button"
+                        title={`Open ${file.originalName}`}
+                        onClick={() => void handleOpenFile(file)}
+                      >
+                        <FileText aria-hidden="true" size={15} />
+                      </button>
+                      <button
+                        className="row-icon-button"
+                        type="button"
+                        title={`Preview ${file.originalName}`}
+                        disabled={file.currentVersion?.scanStatus !== "CLEAN"}
+                        onClick={() => void handlePreviewFile(file)}
+                      >
+                        <Search aria-hidden="true" size={15} />
+                      </button>
                       <button
                         className="row-icon-button"
                         type="button"
@@ -1554,6 +2011,14 @@ export default function Home() {
                         onClick={() => void handleDownload(file)}
                       >
                         <Download aria-hidden="true" size={15} />
+                      </button>
+                      <button
+                        className="row-icon-button danger"
+                        type="button"
+                        title={`Delete ${file.originalName}`}
+                        onClick={() => void handleDeleteFile(file)}
+                      >
+                        <XCircle aria-hidden="true" size={15} />
                       </button>
                     </span>
                   </div>
@@ -1577,6 +2042,58 @@ export default function Home() {
               </div>
             </aside>
           </section>
+          ) : null}
+
+          {activeModule === "recycle" && moduleAccess.recycle ? (
+            <section className="two-column">
+              <article className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>Deleted Files</h2>
+                    <p>{data?.deletedFiles.length ?? 0} files in recycle bin</p>
+                  </div>
+                </div>
+                <div className="request-list">
+                  {(data?.deletedFiles ?? []).map((file) => (
+                    <div className="request-item" key={file.id}>
+                      <div>
+                        <strong>{file.originalName}</strong>
+                        <span>{file.folder?.pathCache ?? "Repository"} · {file.currentVersion ? formatBytes(Number(file.currentVersion.sizeBytes)) : "0 B"}</span>
+                      </div>
+                      <div className="decision-actions">
+                        <button className="row-text-button" type="button" onClick={() => void handleRestoreRecycleFile(file.id)}>Restore</button>
+                        <button className="row-text-button" type="button" onClick={() => void handlePermanentDeleteFile(file.id)}>Delete</button>
+                      </div>
+                    </div>
+                  ))}
+                  {data && data.deletedFiles.length === 0 ? <p className="empty-state">No deleted files.</p> : null}
+                </div>
+              </article>
+
+              <article className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>Deleted Folders</h2>
+                    <p>{data?.deletedFolders.length ?? 0} folders in recycle bin</p>
+                  </div>
+                </div>
+                <div className="request-list">
+                  {(data?.deletedFolders ?? []).map((folder) => (
+                    <div className="request-item" key={folder.id}>
+                      <div>
+                        <strong>{folder.name}</strong>
+                        <span>{folder.pathCache ?? "Repository"} · {folder.fileCount} files</span>
+                      </div>
+                      <div className="decision-actions">
+                        <button className="row-text-button" type="button" onClick={() => void handleRestoreRecycleFolder(folder.id)}>Restore</button>
+                        <button className="row-text-button" type="button" onClick={() => void handlePermanentDeleteFolder(folder.id)}>Delete</button>
+                      </div>
+                    </div>
+                  ))}
+                  {data && data.deletedFolders.length === 0 ? <p className="empty-state">No deleted folders.</p> : null}
+                </div>
+              </article>
+            </section>
           ) : null}
 
           {activeModule === "dashboard" ? (
@@ -1832,18 +2349,89 @@ export default function Home() {
           ) : null}
 
           {activeModule === "roles" && moduleAccess.roles ? (
-            <section className="panel module-workbench">
+            <section className="two-column">
+              <article className="panel">
               <div className="panel-header">
                 <div>
                   <h2>Roles & RBAC</h2>
-                  <p>Permission guard, resource grants, and folder inheritance are active.</p>
+                  <p>{data?.roles.length ?? 0} roles and {data?.permissions.length ?? 0} permissions</p>
                 </div>
               </div>
-              <div className="module-status-grid">
-                <article><strong>Role Gate</strong><span>Enabled</span></article>
-                <article><strong>Folder Inheritance</strong><span>Enabled</span></article>
-                <article><strong>Access Requests</strong><span>{formatNumber(data?.dashboard.pendingAccessRequests ?? 0)} pending</span></article>
+
+              <form className="module-filter-bar" onSubmit={handleAssignRolePermission}>
+                <label>
+                  <span>Role</span>
+                  <select value={rolePermissionRoleId} onChange={(event) => setRolePermissionRoleId(event.target.value)}>
+                    <option value="">Select role</option>
+                    {(data?.roles ?? []).map((role) => (
+                      <option value={role.id} key={role.id}>{role.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Permission</span>
+                  <select value={rolePermissionKey} onChange={(event) => setRolePermissionKey(event.target.value)}>
+                    <option value="">Select permission</option>
+                    {(data?.permissions ?? []).map((permission) => (
+                      <option value={permission.key} key={permission.key}>{permission.key}</option>
+                    ))}
+                  </select>
+                </label>
+                <button className="primary-button" type="submit" disabled={roleSaving || !rolePermissionRoleId || !rolePermissionKey}>
+                  <LockKeyhole aria-hidden="true" size={16} />
+                  Assign
+                </button>
+              </form>
+
+              <form className="module-filter-bar" onSubmit={handleCreateRole}>
+                <label>
+                  <span>Role Name</span>
+                  <input value={roleName} onChange={(event) => setRoleName(event.target.value)} placeholder="Compliance Auditor" />
+                </label>
+                <label>
+                  <span>Code</span>
+                  <input value={roleCode} onChange={(event) => setRoleCode(event.target.value)} placeholder="COMPLIANCE_AUDITOR" />
+                </label>
+                <label>
+                  <span>Description</span>
+                  <input value={roleDescription} onChange={(event) => setRoleDescription(event.target.value)} placeholder="Optional" />
+                </label>
+                <button className="secondary-button" type="submit" disabled={roleSaving || !roleName.trim() || !roleCode.trim()}>
+                  <LockKeyhole aria-hidden="true" size={16} />
+                  New Role
+                </button>
+              </form>
+
+              <div className="role-list">
+                {(data?.roles ?? []).map((role) => (
+                  <article className="role-card" key={role.id}>
+                    <div>
+                      <strong>{role.name}</strong>
+                      <span>{role.code} · {role.permissions.length} permissions</span>
+                    </div>
+                    <div className="permission-chips">
+                      {role.permissions.slice(0, 8).map((permission) => (
+                        <span key={permission.permissionKey}>{permission.permissionKey}</span>
+                      ))}
+                    </div>
+                  </article>
+                ))}
               </div>
+              </article>
+
+              <aside className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>RBAC Status</h2>
+                    <p>Access governance controls</p>
+                  </div>
+                </div>
+                <div className="module-status-grid compact-status-grid">
+                  <article><strong>Role Gate</strong><span>Enabled</span></article>
+                  <article><strong>Folder Inheritance</strong><span>Enabled</span></article>
+                  <article><strong>Pending Reviews</strong><span>{formatNumber(data?.dashboard.pendingAccessRequests ?? 0)}</span></article>
+                </div>
+              </aside>
             </section>
           ) : null}
 
@@ -2046,23 +2634,170 @@ export default function Home() {
             </section>
           ) : null}
 
-          {["reports", "settings"].includes(activeModule) && moduleAccess[activeModule] ? (
-            <section className="panel module-workbench">
+          {activeModule === "reports" && moduleAccess.reports ? (
+            <section className="panel">
               <div className="panel-header">
                 <div>
-                  <h2>{activeModuleConfig.name}</h2>
-                  <p>Enterprise controls are reserved for the next implementation slice.</p>
+                  <h2>Reports</h2>
+                  <p>{data?.reportCards.length ?? 0} management reports available</p>
                 </div>
               </div>
               <div className="module-status-grid">
-                <article><strong>API Foundation</strong><span>Planned</span></article>
-                <article><strong>RBAC Scope</strong><span>Enabled</span></article>
-                <article><strong>Admin UI</strong><span>Queued</span></article>
+                {(data?.reportCards ?? []).map((report) => (
+                  <article key={report.key}>
+                    <strong>{report.title}</strong>
+                    <span>{report.count === null ? report.summary : `${formatNumber(report.count)} rows`}</span>
+                  </article>
+                ))}
               </div>
+            </section>
+          ) : null}
+
+          {activeModule === "settings" && moduleAccess.settings ? (
+            <section className="two-column">
+              <article className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>System Settings</h2>
+                    <p>{data?.systemSettings?.storageDriver ?? "local"} storage driver</p>
+                  </div>
+                </div>
+                <form className="upload-form" onSubmit={handleSaveSystemSettings}>
+                  <div className="form-grid">
+                    <label>
+                      <span>Storage Quota GB</span>
+                      <input value={settingsQuotaGb} onChange={(event) => setSettingsQuotaGb(event.target.value)} inputMode="decimal" />
+                    </label>
+                    <label>
+                      <span>Max Upload MB</span>
+                      <input value={settingsUploadMb} onChange={(event) => setSettingsUploadMb(event.target.value)} inputMode="numeric" />
+                    </label>
+                    <label>
+                      <span>Warning Threshold %</span>
+                      <input value={settingsWarning} onChange={(event) => setSettingsWarning(event.target.value)} inputMode="numeric" />
+                    </label>
+                    <label>
+                      <span>Backup Destination</span>
+                      <input value={settingsBackup} onChange={(event) => setSettingsBackup(event.target.value)} />
+                    </label>
+                  </div>
+                  <div className="modal-actions">
+                    <button className="primary-button" type="submit" disabled={settingsSaving}>
+                      <Settings aria-hidden="true" size={17} />
+                      {settingsSaving ? "Saving" : "Save Settings"}
+                    </button>
+                  </div>
+                </form>
+              </article>
+
+              <article className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>Notification Templates</h2>
+                    <p>{data?.emailTemplates.length ?? 0} transactional templates</p>
+                  </div>
+                </div>
+                <div className="request-list">
+                  {(data?.emailTemplates ?? []).map((template) => (
+                    <div className="request-item" key={template.id}>
+                      <div>
+                        <strong>{template.templateKey}</strong>
+                        <span>{template.subject}</span>
+                      </div>
+                      <button className="row-text-button" type="button" onClick={() => openTemplateEditor(template)}>Edit</button>
+                    </div>
+                  ))}
+                  {data && data.emailTemplates.length === 0 ? <p className="empty-state">No email templates configured.</p> : null}
+                </div>
+              </article>
             </section>
           ) : null}
         </div>
       </section>
+
+      {fileDetailOpen && selectedFile ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel wide-modal" aria-label="File details">
+            <div className="panel-header">
+              <div>
+                <h2>{selectedFile.originalName}</h2>
+                <p>{selectedFile.folder?.pathCache ?? "Repository"}</p>
+              </div>
+              <button className="text-button" type="button" onClick={() => setFileDetailOpen(false)}>
+                Close
+              </button>
+            </div>
+            {fileActionMessage ? <p className="loading-banner">{fileActionMessage}</p> : null}
+            <div className="module-status-grid">
+              <article><strong>Classification</strong><span>{titleCase(selectedFile.classification)}</span></article>
+              <article><strong>Scan</strong><span>{titleCase(selectedFile.currentVersion?.scanStatus ?? "pending")}</span></article>
+              <article><strong>Size</strong><span>{selectedFile.currentVersion ? formatBytes(Number(selectedFile.currentVersion.sizeBytes)) : "0 B"}</span></article>
+            </div>
+            <div className="request-list version-list">
+              {(selectedFile.versions ?? []).map((version) => (
+                <div className="request-item" key={version.id}>
+                  <div>
+                    <strong>Version {version.versionNumber}</strong>
+                    <span>{formatBytes(Number(version.sizeBytes))} · {titleCase(version.scanStatus)} · {formatDate(version.uploadedAt)}</span>
+                  </div>
+                  <button
+                    className="row-text-button"
+                    type="button"
+                    disabled={selectedFile.currentVersion?.id === version.id}
+                    onClick={() => void handleRestoreVersion(version.id)}
+                  >
+                    Restore
+                  </button>
+                </div>
+              ))}
+              {selectedFile.versions?.length === 0 ? <p className="empty-state">No version history available.</p> : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {templateEditing ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel wide-modal" aria-label="Edit email template">
+            <div className="panel-header">
+              <div>
+                <h2>Edit Template</h2>
+                <p>{templateEditing.templateKey}</p>
+              </div>
+              <button className="text-button" type="button" onClick={() => setTemplateEditing(null)}>
+                Close
+              </button>
+            </div>
+            <form className="upload-form" onSubmit={handleSaveTemplate}>
+              <label>
+                <span>Subject</span>
+                <input value={templateSubject} onChange={(event) => setTemplateSubject(event.target.value)} />
+              </label>
+              <label>
+                <span>Text Body</span>
+                <textarea value={templateTextBody} onChange={(event) => setTemplateTextBody(event.target.value)} rows={5} />
+              </label>
+              <label>
+                <span>HTML Body</span>
+                <textarea value={templateHtmlBody} onChange={(event) => setTemplateHtmlBody(event.target.value)} rows={6} />
+              </label>
+              <div className="toggle-row">
+                <label>
+                  <input type="checkbox" checked={templateEnabled} onChange={(event) => setTemplateEnabled(event.target.checked)} />
+                  <span>Enabled</span>
+                </label>
+              </div>
+              <div className="modal-actions">
+                <button className="secondary-button" type="button" onClick={() => setTemplateEditing(null)}>Cancel</button>
+                <button className="primary-button" type="submit" disabled={templateSaving}>
+                  <Mail aria-hidden="true" size={17} />
+                  {templateSaving ? "Saving" : "Save Template"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
 
       {folderModalOpen ? (
         <div className="modal-backdrop" role="presentation">

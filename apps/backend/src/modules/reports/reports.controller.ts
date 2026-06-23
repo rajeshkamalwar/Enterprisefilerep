@@ -15,6 +15,42 @@ export class ReportsController {
     return this.metrics.storageReport();
   }
 
+  @Get("file-inventory")
+  @RequirePermissions("audit.read")
+  fileInventoryReport() {
+    return this.metrics.fileInventoryReport();
+  }
+
+  @Get("users")
+  @RequirePermissions("audit.read")
+  userActivityReport() {
+    return this.metrics.userActivityReport();
+  }
+
+  @Get("activity")
+  @RequirePermissions("audit.read")
+  activityReport() {
+    return this.metrics.activityReport();
+  }
+
+  @Get("permissions")
+  @RequirePermissions("audit.read")
+  permissionsReport() {
+    return this.metrics.permissionsReport();
+  }
+
+  @Get("malware")
+  @RequirePermissions("audit.read")
+  malwareReport() {
+    return this.metrics.malwareReport();
+  }
+
+  @Get("backup")
+  @RequirePermissions("audit.read")
+  backupReport() {
+    return this.metrics.backupReport();
+  }
+
   @Post(":reportType/export")
   @RequirePermissions("audit.export")
   exportReport(@Param("reportType") reportType: string, @Body() body: { format: string }) {

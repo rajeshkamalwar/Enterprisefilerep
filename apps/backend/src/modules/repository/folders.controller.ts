@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser, AuthGuard } from "../auth/auth.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { RequirePermissions } from "../rbac/permissions.decorator";
@@ -29,6 +29,12 @@ export class FoldersController {
     });
   }
 
+  @Get("recycle-bin")
+  @RequirePermissions("folder.restore")
+  recycleBin(@CurrentUser() user: AuthenticatedUser, @Query("limit") limit?: string) {
+    return this.repository.listFolderRecycleBin(user, limit ? Number(limit) : undefined);
+  }
+
   @Post()
   @RequirePermissions("folder.create")
   createFolder(@Body() body: CreateFolderBody, @CurrentUser() user: AuthenticatedUser) {
@@ -46,6 +52,24 @@ export class FoldersController {
       name: body.name,
       actorUser: user
     });
+  }
+
+  @Delete(":id")
+  @RequirePermissions("folder.delete")
+  deleteFolder(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.repository.deleteFolder(id, user);
+  }
+
+  @Patch(":id/restore")
+  @RequirePermissions("folder.restore")
+  restoreFolder(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.repository.restoreFolder(id, user);
+  }
+
+  @Delete(":id/permanent")
+  @RequirePermissions("folder.delete")
+  permanentlyDeleteFolder(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.repository.permanentlyDeleteFolder(id, user);
   }
 
   @Get(":id")
