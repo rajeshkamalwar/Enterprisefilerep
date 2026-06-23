@@ -5102,3 +5102,33 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* Final shell correction: keep the ERP sidebar and workspace side by side.
+   Several imported theme blocks redefine the shell; this block must win. */
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  grid-column: 1;
+  width: var(--sidebar-width);
+}
+
+.workspace {
+  grid-column: 2;
+  min-width: 0;
+  margin-left: 0;
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace {
+    grid-column: 1;
+    margin-left: 0;
+  }
+}
