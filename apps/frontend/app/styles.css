@@ -497,9 +497,15 @@ h1 {
 }
 
 .status.failed,
-.status.infected {
+.status.infected,
+.status.rejected {
   color: var(--danger);
   background: #fff1f0;
+}
+
+.status.approved {
+  color: var(--success);
+  background: #eaf8f1;
 }
 
 .row-icon-button {
@@ -517,6 +523,10 @@ h1 {
 .row-icon-button:disabled {
   color: var(--muted);
   background: #f1f3f6;
+}
+
+.row-icon-button.danger {
+  color: var(--danger);
 }
 
 .empty-state {
@@ -606,6 +616,64 @@ h1 {
 .activity-list li:last-child {
   border-bottom: 0;
   padding-bottom: 0;
+}
+
+.access-row {
+  align-items: start;
+}
+
+.request-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.request-item {
+  min-height: 56px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.request-item:first-child {
+  border-top: 0;
+}
+
+.request-item div:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.request-item strong,
+.request-item span {
+  overflow-wrap: anywhere;
+}
+
+.request-item strong {
+  font-size: 13px;
+}
+
+.request-item div:first-child > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.review-item {
+  align-items: flex-start;
+}
+
+.decision-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .modal-backdrop {

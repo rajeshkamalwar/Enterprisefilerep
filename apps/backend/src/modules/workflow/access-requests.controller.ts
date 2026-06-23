@@ -34,6 +34,16 @@ export class AccessRequestsController {
     });
   }
 
+  @Get("mine")
+  @RequirePermissions("file.read")
+  listMine(@Query() query: AccessRequestListQuery, @Req() request: RequestWithUser) {
+    return this.accessRequests.listMine(request.user!.id, {
+      status: query.status,
+      page: query.page ? Number(query.page) : undefined,
+      pageSize: query.pageSize ? Number(query.pageSize) : undefined
+    });
+  }
+
   @Post()
   @RequirePermissions("file.read")
   create(@Body() body: CreateAccessRequestBody, @Req() request: RequestWithUser) {

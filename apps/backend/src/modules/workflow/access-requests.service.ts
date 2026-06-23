@@ -46,6 +46,36 @@ export class AccessRequestsService {
     };
   }
 
+  async listMine(requesterId: string, input: ListAccessRequestsInput = {}) {
+    const page = input.page && input.page > 0 ? input.page : 1;
+    const pageSize = input.pageSize && input.pageSize > 0 ? Math.min(input.pageSize, 100) : 50;
+    const where = {
+      requesterId,
+      ...(input.status ? { status: input.status } : {})
+    };
+
+    const [data, totalItems] = await this.prisma.$transaction([
+      this.prisma.accessRequest.findMany({
+        where,
+        include: this.includePeople(),
+        orderBy: { createdAt: "desc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize
+      }),
+      this.prisma.accessRequest.count({ where })
+    ]);
+
+    return {
+      data: data.map((request) => this.serialize(request)),
+      pagination: {
+        page,
+        pageSize,
+        totalItems,
+        totalPages: Math.ceil(totalItems / pageSize)
+      }
+    };
+  }
+
   async create(input: CreateAccessRequestInput, requesterId: string) {
     const permissionKey = input.permissionKey.trim();
     const resourceId = input.resourceId.trim();

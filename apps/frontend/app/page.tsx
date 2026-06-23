@@ -6,6 +6,7 @@ import {
   ArchiveRestore,
   Bell,
   Building2,
+  CheckCircle2,
   ChartNoAxesCombined,
   Database,
   Download,
@@ -24,7 +25,8 @@ import {
   Settings,
   ShieldCheck,
   Upload,
-  Users
+  Users,
+  XCircle
 } from "lucide-react";
 
 const modules = [
@@ -124,6 +126,8 @@ type AppData = {
   roots: FolderSummary[];
   folder: FolderDetail | null;
   files: RepositoryFile[];
+  myAccessRequests: AccessRequest[];
+  approvalRequests: AccessRequest[];
 };
 
 type UploadResult = RepositoryFile & {
@@ -131,7 +135,34 @@ type UploadResult = RepositoryFile & {
   scanQueueError?: string;
 };
 
+type AccessRequest = {
+  id: string;
+  requester?: {
+    fullName: string;
+    email: string;
+  } | null;
+  resourceType: string;
+  resourceId: string;
+  permissionKey: string;
+  businessJustification: string;
+  status: string;
+  decisionReason: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+};
+
 const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+
+const emptyDashboard: Dashboard = {
+  totalUsers: 0,
+  activeUsers: 0,
+  totalFiles: 0,
+  storageUsedBytes: 0,
+  pendingAccessRequests: 0,
+  failedJobs: 0,
+  smtpStatus: "restricted",
+  recentActivity: []
+};
 
 class ApiError extends Error {
   constructor(
@@ -249,6 +280,14 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
+  const [accessModalOpen, setAccessModalOpen] = useState(false);
+  const [accessResourceType, setAccessResourceType] = useState("FOLDER");
+  const [accessResourceId, setAccessResourceId] = useState("");
+  const [accessPermissionKey, setAccessPermissionKey] = useState("file.read");
+  const [accessJustification, setAccessJustification] = useState("");
+  const [accessRequesting, setAccessRequesting] = useState(false);
+  const [accessDecisionId, setAccessDecisionId] = useState<string | null>(null);
+  const [accessMessage, setAccessMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -280,16 +319,30 @@ export default function Home() {
     ];
   }, [data]);
 
+  const canApproveAccess = Boolean(user?.roles.some((role) => role === "SUPER_ADMIN" || role === "DEPARTMENT_ADMIN"));
+
   async function loadDashboard(activeToken: string, query = searchQuery) {
     setLoading(true);
     setError(null);
 
     try {
-      const [dashboard, health, roots, fileSearch] = await Promise.all([
-        apiRequest<Dashboard>("/admin/dashboard", activeToken),
+      const dashboardRequest = apiRequest<Dashboard>("/admin/dashboard", activeToken).catch((caught) => {
+        if (caught instanceof ApiError && caught.status === 403) {
+          return emptyDashboard;
+        }
+
+        throw caught;
+      });
+
+      const [dashboard, health, roots, fileSearch, myAccessRequests, approvalRequests] = await Promise.all([
+        dashboardRequest,
         apiRequest<HealthResponse>("/health"),
         apiRequest<{ data: FolderSummary[] }>("/folders", activeToken),
-        apiRequest<{ data: RepositoryFile[] }>(`/files?pageSize=8${query.trim() ? `&q=${encodeURIComponent(query.trim())}` : ""}`, activeToken)
+        apiRequest<{ data: RepositoryFile[] }>(`/files?pageSize=8${query.trim() ? `&q=${encodeURIComponent(query.trim())}` : ""}`, activeToken),
+        apiRequest<{ data: AccessRequest[] }>("/access-requests/mine?pageSize=5", activeToken),
+        canApproveAccess
+          ? apiRequest<{ data: AccessRequest[] }>("/access-requests?status=PENDING&pageSize=5", activeToken)
+          : Promise.resolve({ data: [] })
       ]);
 
       const rootFolder = roots.data[0];
@@ -302,7 +355,9 @@ export default function Home() {
         health,
         roots: roots.data,
         folder,
-        files: fileSearch.data
+        files: fileSearch.data,
+        myAccessRequests: myAccessRequests.data,
+        approvalRequests: approvalRequests.data
       });
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) {
@@ -461,6 +516,73 @@ export default function Home() {
     }
   }
 
+  async function handleCreateAccessRequest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!token) {
+      setError("Please sign in before requesting access.");
+      return;
+    }
+
+    if (!accessResourceId.trim() || !accessJustification.trim()) {
+      setAccessMessage("Resource ID and business justification are required.");
+      return;
+    }
+
+    setAccessRequesting(true);
+    setAccessMessage(null);
+    setError(null);
+
+    try {
+      await apiRequest<AccessRequest>("/access-requests", token, {
+        method: "POST",
+        body: JSON.stringify({
+          resourceType: accessResourceType,
+          resourceId: accessResourceId.trim(),
+          permissionKey: accessPermissionKey,
+          businessJustification: accessJustification.trim()
+        })
+      });
+
+      await loadDashboard(token, searchQuery);
+      setAccessResourceId("");
+      setAccessJustification("");
+      setAccessModalOpen(false);
+      setAccessMessage("Access request submitted.");
+    } catch (caught) {
+      setAccessMessage(caught instanceof Error ? caught.message : "Access request failed");
+    } finally {
+      setAccessRequesting(false);
+    }
+  }
+
+  async function handleAccessDecision(requestId: string, decision: "approve" | "reject") {
+    if (!token) {
+      setError("Please sign in before reviewing access.");
+      return;
+    }
+
+    setAccessDecisionId(requestId);
+    setAccessMessage(null);
+    setError(null);
+
+    try {
+      await apiRequest<AccessRequest>(`/access-requests/${requestId}/${decision}`, token, {
+        method: "POST",
+        body: JSON.stringify({
+          decisionReason: decision === "approve" ? "Approved from ERP dashboard" : "Rejected from ERP dashboard"
+        })
+      });
+
+      await loadDashboard(token, searchQuery);
+      setAccessMessage(decision === "approve" ? "Access request approved." : "Access request rejected.");
+    } catch (caught) {
+      setAccessMessage(caught instanceof Error ? caught.message : "Access decision failed");
+    } finally {
+      setAccessDecisionId(null);
+    }
+  }
+
   if (!token || !user) {
     return (
       <main className="login-shell">
@@ -573,6 +695,7 @@ export default function Home() {
 
           {error ? <p className="error-banner">{error}</p> : null}
           {uploadMessage ? <p className="loading-banner">{uploadMessage}</p> : null}
+          {accessMessage ? <p className="loading-banner">{accessMessage}</p> : null}
           {loading && !data ? <p className="loading-banner">Loading live repository data...</p> : null}
 
           <section className="kpi-grid" aria-label="Repository metrics">
@@ -654,7 +777,7 @@ export default function Home() {
               <div className="shortcut-grid">
                 <button type="button"><Heart size={17} /> Favorites</button>
                 <button type="button"><Activity size={17} /> Recent</button>
-                <button type="button"><KeyRound size={17} /> Access Requests</button>
+                <button type="button" onClick={() => setAccessModalOpen(true)}><KeyRound size={17} /> Access Requests</button>
                 <button type="button"><ShieldCheck size={17} /> My Permissions</button>
               </div>
             </aside>
@@ -693,6 +816,72 @@ export default function Home() {
                   </li>
                 ))}
               </ol>
+            </article>
+          </section>
+
+          <section className="two-column access-row">
+            <article className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>My Access Requests</h2>
+                  <p>{data?.myAccessRequests.length ?? 0} recent requests</p>
+                </div>
+                <button className="text-button" type="button" onClick={() => setAccessModalOpen(true)}>New</button>
+              </div>
+              <div className="request-list">
+                {(data?.myAccessRequests ?? []).map((request) => (
+                  <div className="request-item" key={request.id}>
+                    <div>
+                      <strong>{titleCase(request.resourceType)} · {request.permissionKey}</strong>
+                      <span>{request.resourceId}</span>
+                    </div>
+                    <span className={`status ${request.status.toLowerCase()}`}>{titleCase(request.status)}</span>
+                  </div>
+                ))}
+                {data && data.myAccessRequests.length === 0 ? <p className="empty-state">No access requests submitted.</p> : null}
+              </div>
+            </article>
+
+            <article className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Approval Queue</h2>
+                  <p>{canApproveAccess ? `${data?.approvalRequests.length ?? 0} pending decisions` : "Reviewer access required"}</p>
+                </div>
+              </div>
+              <div className="request-list">
+                {canApproveAccess
+                  ? (data?.approvalRequests ?? []).map((request) => (
+                      <div className="request-item review-item" key={request.id}>
+                        <div>
+                          <strong>{request.requester?.fullName ?? request.requester?.email ?? "Requester"}</strong>
+                          <span>{titleCase(request.resourceType)} · {request.permissionKey}</span>
+                        </div>
+                        <div className="decision-actions">
+                          <button
+                            className="row-icon-button"
+                            type="button"
+                            title="Approve request"
+                            disabled={accessDecisionId === request.id}
+                            onClick={() => void handleAccessDecision(request.id, "approve")}
+                          >
+                            <CheckCircle2 aria-hidden="true" size={15} />
+                          </button>
+                          <button
+                            className="row-icon-button danger"
+                            type="button"
+                            title="Reject request"
+                            disabled={accessDecisionId === request.id}
+                            onClick={() => void handleAccessDecision(request.id, "reject")}
+                          >
+                            <XCircle aria-hidden="true" size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  : null}
+                {canApproveAccess && data && data.approvalRequests.length === 0 ? <p className="empty-state">No pending access requests.</p> : null}
+              </div>
             </article>
           </section>
         </div>
@@ -751,6 +940,72 @@ export default function Home() {
                 <button className="primary-button" type="submit" disabled={uploading}>
                   <Upload aria-hidden="true" size={17} />
                   {uploading ? "Uploading" : "Upload"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
+      {accessModalOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel" aria-label="Create access request">
+            <div className="panel-header">
+              <div>
+                <h2>Access Request</h2>
+                <p>{user.fullName}</p>
+              </div>
+              <button className="text-button" type="button" onClick={() => setAccessModalOpen(false)}>
+                Close
+              </button>
+            </div>
+
+            <form className="upload-form" onSubmit={handleCreateAccessRequest}>
+              <label>
+                <span>Resource Type</span>
+                <select value={accessResourceType} onChange={(event) => setAccessResourceType(event.target.value)}>
+                  <option value="FOLDER">Folder</option>
+                  <option value="FILE">File</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Resource ID</span>
+                <input
+                  value={accessResourceId}
+                  onChange={(event) => setAccessResourceId(event.target.value)}
+                  placeholder={data?.roots[0]?.id ?? "Folder or file ID"}
+                />
+              </label>
+
+              <label>
+                <span>Permission</span>
+                <select value={accessPermissionKey} onChange={(event) => setAccessPermissionKey(event.target.value)}>
+                  <option value="file.read">Read File</option>
+                  <option value="file.download">Download File</option>
+                  <option value="file.create">Upload File</option>
+                  <option value="folder.read">Read Folder</option>
+                  <option value="folder.create">Create Folder</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Business Justification</span>
+                <textarea
+                  value={accessJustification}
+                  onChange={(event) => setAccessJustification(event.target.value)}
+                  rows={4}
+                  placeholder="Project, department, client, or compliance reason"
+                />
+              </label>
+
+              <div className="modal-actions">
+                <button className="secondary-button" type="button" onClick={() => setAccessModalOpen(false)}>
+                  Cancel
+                </button>
+                <button className="primary-button" type="submit" disabled={accessRequesting}>
+                  <KeyRound aria-hidden="true" size={17} />
+                  {accessRequesting ? "Submitting" : "Submit"}
                 </button>
               </div>
             </form>
