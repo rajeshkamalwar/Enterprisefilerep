@@ -39,7 +39,7 @@ The repository currently contains the foundation only. Endpoints that mention st
 1. Run the first database migration and seed against Postgres.
 2. Add revocable refresh-token sessions.
 3. Run and verify BullMQ scan worker against Docker Redis and ClamAV.
-4. Audit log expansion for remaining admin events.
-5. SMTP queue and templates.
+4. Run and verify SMTP email worker against a real SMTP provider.
+5. Audit log expansion for remaining admin events.
 6. Search indexing.
 7. Production hardening for Hostinger VPS.

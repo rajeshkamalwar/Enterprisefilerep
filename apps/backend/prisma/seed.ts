@@ -10,6 +10,30 @@ const adapter = new PrismaPg({
 
 const prisma = new PrismaClient({ adapter });
 
+const emailTemplates = [
+  {
+    templateKey: "smtp.test",
+    subject: "SMTP test from Enterprise File Repository",
+    textBody: "This is a test email from {{appName}} sent at {{timestamp}}.",
+    htmlBody: "<p>This is a test email from <strong>{{appName}}</strong> sent at {{timestamp}}.</p>"
+  },
+  {
+    templateKey: "file.scan.infected",
+    subject: "Malware detected in uploaded file",
+    textBody:
+      "Malware was detected in {{fileName}}. File ID: {{fileId}}. Version ID: {{versionId}}. Signature: {{signature}}.",
+    htmlBody:
+      "<p>Malware was detected in <strong>{{fileName}}</strong>.</p><p>File ID: {{fileId}}<br/>Version ID: {{versionId}}<br/>Signature: {{signature}}</p>"
+  },
+  {
+    templateKey: "file.scan.failed",
+    subject: "File antivirus scan failed",
+    textBody: "Antivirus scanning failed for {{fileName}}. Version ID: {{versionId}}. Reason: {{reason}}.",
+    htmlBody:
+      "<p>Antivirus scanning failed for <strong>{{fileName}}</strong>.</p><p>Version ID: {{versionId}}<br/>Reason: {{reason}}</p>"
+  }
+];
+
 async function main() {
   const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "Admin@12345";
 
@@ -116,6 +140,14 @@ async function main() {
         departmentId: department.id,
         createdById: admin.id
       }
+    });
+  }
+
+  for (const template of emailTemplates) {
+    await prisma.emailTemplate.upsert({
+      where: { templateKey: template.templateKey },
+      update: template,
+      create: template
     });
   }
 

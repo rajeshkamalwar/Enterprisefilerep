@@ -65,6 +65,12 @@ enum PreviewStatus {
   NOT_SUPPORTED
 }
 
+enum EmailDeliveryStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
 model User {
   id           String       @id @default(cuid())
   email        String       @unique
@@ -322,4 +328,34 @@ model FileVersion {
   @@index([fileId])
   @@index([scanStatus])
   @@map("file_versions")
+}
+
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  templateKey String   @unique @map("template_key")
+  subject     String
+  htmlBody    String   @map("html_body")
+  textBody    String   @map("text_body")
+  isEnabled   Boolean  @default(true) @map("is_enabled")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("email_templates")
+}
+
+model EmailDeliveryLog {
+  id             String              @id @default(cuid())
+  templateKey    String              @map("template_key")
+  recipientEmail String              @map("recipient_email")
+  subject        String
+  status         EmailDeliveryStatus @default(QUEUED)
+  failureReason  String?             @map("failure_reason")
+  retryCount     Int                 @default(0) @map("retry_count")
+  sentAt         DateTime?           @map("sent_at")
+  createdAt      DateTime            @default(now()) @map("created_at")
+
+  @@index([templateKey])
+  @@index([status])
+  @@index([createdAt])
+  @@map("email_delivery_logs")
 }

@@ -1,11 +1,18 @@
 import { Body, Controller, Get, Patch, Post, UseGuards } from "@nestjs/common";
 import { AuthGuard } from "../auth/auth.guard";
+import { EmailQueueService } from "../queue/email-queue.service";
 import { RequirePermissions } from "../rbac/permissions.decorator";
 import { PermissionsGuard } from "../rbac/permissions.guard";
+import { MailerService } from "./mailer.service";
 
 @UseGuards(AuthGuard, PermissionsGuard)
 @Controller("settings/smtp")
 export class SmtpController {
+  constructor(
+    private readonly emailQueue: EmailQueueService,
+    private readonly mailer: MailerService
+  ) {}
+
   @Get()
   @RequirePermissions("smtp.read")
   getSettings() {
@@ -33,19 +40,25 @@ export class SmtpController {
   @Post("test")
   @RequirePermissions("smtp.update")
   testEmail(@Body() body: { to: string }) {
-    return {
-      queued: true,
+    return this.emailQueue.enqueue({
       to: body.to,
-      message: "SMTP test email queued. BullMQ delivery worker comes in the notification milestone."
-    };
+      templateKey: "smtp.test",
+      variables: {
+        appName: "Enterprise File Repository",
+        timestamp: new Date().toISOString()
+      }
+    });
   }
 
   @Get("delivery-logs")
   @RequirePermissions("smtp.read")
   logs() {
-    return {
-      data: [],
-      pagination: { page: 1, pageSize: 50, totalItems: 0, totalPages: 0 }
-    };
+    return this.mailer.listDeliveryLogs();
+  }
+
+  @Get("queue")
+  @RequirePermissions("smtp.read")
+  queue() {
+    return this.emailQueue.getCounts();
   }
 }

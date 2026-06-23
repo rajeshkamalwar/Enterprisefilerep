@@ -137,6 +137,39 @@ curl -X GET "http://localhost:4000/api/v1/admin/scans/queue" \
   -H "Authorization: Bearer ACCESS_TOKEN"
 ```
 
+## SMTP Email Queue
+
+Run the email queue worker:
+
+```bash
+npm run worker:email-queue -w @filerepo/backend
+```
+
+SMTP test email:
+
+```bash
+curl -X POST "http://localhost:4000/api/v1/settings/smtp/test" \
+  -H "Authorization: Bearer ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"to": "it-support@example.com"}'
+```
+
+Email queue status:
+
+```bash
+curl -X GET "http://localhost:4000/api/v1/settings/smtp/queue" \
+  -H "Authorization: Bearer ACCESS_TOKEN"
+```
+
+Delivery logs:
+
+```bash
+curl -X GET "http://localhost:4000/api/v1/settings/smtp/delivery-logs" \
+  -H "Authorization: Bearer ACCESS_TOKEN"
+```
+
+The scanner queues security emails for infected files and scan failures using `SECURITY_ALERT_EMAILS`.
+
 ## Auth And RBAC
 
 Protected endpoints use:

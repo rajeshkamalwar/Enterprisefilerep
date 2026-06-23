@@ -22,6 +22,9 @@ CREATE TYPE "ScanStatus" AS ENUM ('PENDING', 'SCANNING', 'CLEAN', 'INFECTED', 'F
 -- CreateEnum
 CREATE TYPE "PreviewStatus" AS ENUM ('PENDING', 'READY', 'FAILED', 'NOT_SUPPORTED');
 
+-- CreateEnum
+CREATE TYPE "EmailDeliveryStatus" AS ENUM ('QUEUED', 'SENT', 'FAILED');
+
 -- CreateTable
 CREATE TABLE "users" (
     "id" TEXT NOT NULL,
@@ -220,6 +223,35 @@ CREATE TABLE "file_versions" (
     CONSTRAINT "file_versions_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "email_templates" (
+    "id" TEXT NOT NULL,
+    "template_key" TEXT NOT NULL,
+    "subject" TEXT NOT NULL,
+    "html_body" TEXT NOT NULL,
+    "text_body" TEXT NOT NULL,
+    "is_enabled" BOOLEAN NOT NULL DEFAULT true,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "email_templates_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "email_delivery_logs" (
+    "id" TEXT NOT NULL,
+    "template_key" TEXT NOT NULL,
+    "recipient_email" TEXT NOT NULL,
+    "subject" TEXT NOT NULL,
+    "status" "EmailDeliveryStatus" NOT NULL DEFAULT 'QUEUED',
+    "failure_reason" TEXT,
+    "retry_count" INTEGER NOT NULL DEFAULT 0,
+    "sent_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "email_delivery_logs_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 
@@ -309,6 +341,18 @@ CREATE INDEX "file_versions_scan_status_idx" ON "file_versions"("scan_status");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "file_versions_file_id_version_number_key" ON "file_versions"("file_id", "version_number");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "email_templates_template_key_key" ON "email_templates"("template_key");
+
+-- CreateIndex
+CREATE INDEX "email_delivery_logs_template_key_idx" ON "email_delivery_logs"("template_key");
+
+-- CreateIndex
+CREATE INDEX "email_delivery_logs_status_idx" ON "email_delivery_logs"("status");
+
+-- CreateIndex
+CREATE INDEX "email_delivery_logs_created_at_idx" ON "email_delivery_logs"("created_at");
 
 -- AddForeignKey
 ALTER TABLE "users" ADD CONSTRAINT "users_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "departments"("id") ON DELETE SET NULL ON UPDATE CASCADE;

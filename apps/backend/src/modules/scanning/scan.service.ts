@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { ScanStatus } from "@prisma/client";
 import { PrismaService } from "../database/prisma.service";
+import { EmailQueueService } from "../queue/email-queue.service";
 import { LocalStorageService } from "../storage/local-storage.service";
 import { ClamavService } from "./clamav.service";
 
@@ -15,6 +16,7 @@ type ScanOneResult = {
 export class ScanService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly emailQueue: EmailQueueService,
     private readonly storage: LocalStorageService,
     private readonly clamav: ClamavService
   ) {}
@@ -110,6 +112,16 @@ export class ScanService {
         })
       ]);
 
+      await this.notifyAdmins({
+        templateKey: "file.scan.infected",
+        variables: {
+          fileName: version.file.originalName,
+          fileId: version.fileId,
+          versionId: version.id,
+          signature: result.signature ?? "Unknown"
+        }
+      });
+
       return {
         versionId: version.id,
         fileId: version.fileId,
@@ -136,12 +148,40 @@ export class ScanService {
         })
       ]);
 
+      await this.notifyAdmins({
+        templateKey: "file.scan.failed",
+        variables: {
+          fileName: version.file.originalName,
+          versionId: version.id,
+          reason: message
+        }
+      });
+
       return {
         versionId: version.id,
         fileId: version.fileId,
         status: "FAILED",
         message
       };
+    }
+  }
+
+  private async notifyAdmins(input: { templateKey: string; variables: Record<string, string> }) {
+    const recipients = (process.env.SECURITY_ALERT_EMAILS ?? process.env.SMTP_REPLY_TO ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+
+    for (const recipient of recipients) {
+      try {
+        await this.emailQueue.enqueue({
+          to: recipient,
+          templateKey: input.templateKey,
+          variables: input.variables
+        });
+      } catch (error) {
+        console.error("Failed to enqueue security notification", error);
+      }
     }
   }
 }

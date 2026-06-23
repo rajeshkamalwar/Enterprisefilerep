@@ -77,6 +77,19 @@ services:
     volumes:
       - ./storage:/app/storage
 
+  email-worker:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: filerepo-email-worker
+    command: ["npm", "run", "worker:email-queue", "-w", "@filerepo/backend"]
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - redis
+      - backend
+
   frontend:
     build:
       context: .

@@ -16,8 +16,10 @@ import { ReportsController } from "./reports/reports.controller";
 import { SmtpController } from "./smtp/smtp.controller";
 import { RepositoryService } from "./repository/repository.service";
 import { ScanQueueService } from "./queue/scan-queue.service";
+import { EmailQueueService } from "./queue/email-queue.service";
 import { ClamavService } from "./scanning/clamav.service";
 import { ScanService } from "./scanning/scan.service";
+import { MailerService } from "./smtp/mailer.service";
 import { LocalStorageService } from "./storage/local-storage.service";
 
 @Module({
@@ -43,7 +45,9 @@ import { LocalStorageService } from "./storage/local-storage.service";
     AuthGuard,
     AuthService,
     ClamavService,
+    EmailQueueService,
     LocalStorageService,
+    MailerService,
     PermissionsGuard,
     RbacService,
     RepositoryService,
