@@ -1,3 +1,6 @@
+"use client";
+
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   ArchiveRestore,
@@ -12,7 +15,9 @@ import {
   History,
   KeyRound,
   LockKeyhole,
+  LogOut,
   Mail,
+  RefreshCcw,
   Search,
   ServerCog,
   Settings,
@@ -35,38 +40,298 @@ const modules = [
   { name: "Settings", icon: Settings }
 ];
 
-const kpis = [
-  { label: "Total Files", value: "24,890", detail: "1,284 added this month" },
-  { label: "Storage Used", value: "1.8 TB", detail: "62% of current VPS allocation" },
-  { label: "Active Users", value: "143", detail: "18 countries and locations" },
-  { label: "Pending Reviews", value: "12", detail: "Access and restore requests" }
-];
+type LoginResponse = {
+  accessToken: string;
+  user: {
+    id: string;
+    email: string;
+    fullName: string;
+    roles: string[];
+  };
+};
 
-const folders = [
-  { name: "Finance / India / FY 2026", owner: "Finance India", className: "Confidential", status: "Clean", updated: "Today" },
-  { name: "HR / Global Policies", owner: "HR Global", className: "Internal", status: "Clean", updated: "Yesterday" },
-  { name: "Legal / Vendor Contracts", owner: "Legal", className: "Restricted", status: "Scanning", updated: "Jun 21" },
-  { name: "Projects / Alpha / Deliverables", owner: "Project Alpha", className: "Internal", status: "Clean", updated: "Jun 20" }
-];
+type Dashboard = {
+  totalUsers: number;
+  activeUsers: number;
+  totalFiles: number;
+  storageUsedBytes: number;
+  pendingAccessRequests: number;
+  failedJobs: number;
+  smtpStatus: string;
+  recentActivity: Array<{
+    id: string;
+    action: string;
+    actor: string;
+    entityName: string | null;
+    createdAt: string;
+  }>;
+};
 
-const health = [
-  { name: "API", state: "Healthy" },
-  { name: "Database", state: "Healthy" },
-  { name: "Redis Queue", state: "Healthy" },
-  { name: "Search", state: "Indexing" },
-  { name: "ClamAV", state: "Healthy" },
-  { name: "SMTP", state: "Needs Test" }
-];
+type HealthResponse = {
+  status: string;
+  checks: Array<{
+    name: string;
+    status: string;
+    detail: string;
+  }>;
+};
 
-const activities = [
-  "Finance India uploaded 18 invoice files",
-  "Legal restricted access to Vendor Contracts",
-  "Backup completed at 02:00 IST",
-  "ClamAV scan queue cleared",
-  "Project Alpha folder permissions updated"
-];
+type FolderSummary = {
+  id: string;
+  name: string;
+  department?: {
+    name: string;
+    code: string;
+  } | null;
+  childFolderCount: number;
+  fileCount: number;
+};
+
+type RepositoryFile = {
+  id: string;
+  originalName: string;
+  classification: string;
+  updatedAt: string;
+  folder?: {
+    name: string;
+    pathCache: string | null;
+  };
+  createdBy?: {
+    fullName: string;
+    email: string;
+  };
+  department?: {
+    name: string;
+    code: string;
+  } | null;
+  currentVersion?: {
+    sizeBytes: string;
+    scanStatus: string;
+    uploadedAt: string;
+  } | null;
+};
+
+type FolderDetail = {
+  breadcrumbs: Array<{ id: string; name: string }>;
+  children: FolderSummary[];
+  files: RepositoryFile[];
+};
+
+type AppData = {
+  dashboard: Dashboard;
+  health: HealthResponse;
+  roots: FolderSummary[];
+  folder: FolderDetail | null;
+  files: RepositoryFile[];
+};
+
+const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("en-IN").format(value);
+}
+
+function formatBytes(value: number) {
+  if (value < 1024) {
+    return `${value} B`;
+  }
+
+  const units = ["KB", "MB", "GB", "TB"];
+  let size = value / 1024;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function titleCase(value: string) {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+async function apiRequest<T>(path: string, token?: string, init: RequestInit = {}) {
+  const response = await fetch(`${apiBase}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init.headers
+    }
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed: ${response.status}`);
+  }
+
+  return response.json() as Promise<T>;
+}
 
 export default function Home() {
+  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<LoginResponse["user"] | null>(null);
+  const [email, setEmail] = useState("admin@company.com");
+  const [password, setPassword] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [data, setData] = useState<AppData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const savedToken = window.localStorage.getItem("filerepo.token");
+    const savedUser = window.localStorage.getItem("filerepo.user");
+
+    if (savedToken && savedUser) {
+      setToken(savedToken);
+      setUser(JSON.parse(savedUser) as LoginResponse["user"]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (token) {
+      void loadDashboard(token);
+    }
+  }, [token]);
+
+  const kpis = useMemo(() => {
+    if (!data) {
+      return [];
+    }
+
+    return [
+      { label: "Total Files", value: formatNumber(data.dashboard.totalFiles), detail: `${formatBytes(data.dashboard.storageUsedBytes)} stored` },
+      { label: "Storage Used", value: formatBytes(data.dashboard.storageUsedBytes), detail: `${formatNumber(data.dashboard.totalFiles)} active files` },
+      { label: "Active Users", value: formatNumber(data.dashboard.activeUsers), detail: `${formatNumber(data.dashboard.totalUsers)} total users` },
+      { label: "Pending Reviews", value: formatNumber(data.dashboard.pendingAccessRequests), detail: "Access requests awaiting decision" }
+    ];
+  }, [data]);
+
+  async function loadDashboard(activeToken: string, query = searchQuery) {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const [dashboard, health, roots, fileSearch] = await Promise.all([
+        apiRequest<Dashboard>("/admin/dashboard", activeToken),
+        apiRequest<HealthResponse>("/health"),
+        apiRequest<{ data: FolderSummary[] }>("/folders", activeToken),
+        apiRequest<{ data: RepositoryFile[] }>(`/files?pageSize=8${query.trim() ? `&q=${encodeURIComponent(query.trim())}` : ""}`, activeToken)
+      ]);
+
+      const rootFolder = roots.data[0];
+      const folder = rootFolder
+        ? await apiRequest<FolderDetail>(`/folders/${rootFolder.id}`, activeToken)
+        : null;
+
+      setData({
+        dashboard,
+        health,
+        roots: roots.data,
+        folder,
+        files: fileSearch.data
+      });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to load dashboard data");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthLoading(true);
+    setError(null);
+
+    try {
+      const result = await apiRequest<LoginResponse>("/auth/login", undefined, {
+        method: "POST",
+        body: JSON.stringify({ email, password })
+      });
+
+      window.localStorage.setItem("filerepo.token", result.accessToken);
+      window.localStorage.setItem("filerepo.user", JSON.stringify(result.user));
+      setToken(result.accessToken);
+      setUser(result.user);
+      setPassword("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Login failed");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  function handleLogout() {
+    window.localStorage.removeItem("filerepo.token");
+    window.localStorage.removeItem("filerepo.user");
+    setToken(null);
+    setUser(null);
+    setData(null);
+  }
+
+  function handleSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const query = String(formData.get("repositorySearch") ?? "");
+    setSearchQuery(query);
+
+    if (token) {
+      void loadDashboard(token, query);
+    }
+  }
+
+  if (!token || !user) {
+    return (
+      <main className="login-shell">
+        <section className="login-panel">
+          <div className="brand login-brand">
+            <div className="brand-mark">EFR</div>
+            <div>
+              <p className="brand-title">File Repository</p>
+              <p className="brand-subtitle">Enterprise ERP Module</p>
+            </div>
+          </div>
+
+          <form className="login-form" onSubmit={handleLogin}>
+            <div>
+              <p className="eyebrow">Secure Workspace</p>
+              <h1>Company File Repository</h1>
+            </div>
+            <label>
+              <span>Email</span>
+              <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" />
+            </label>
+            <label>
+              <span>Password</span>
+              <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" />
+            </label>
+            {error ? <p className="error-text">{error}</p> : null}
+            <button className="primary-button" type="submit" disabled={authLoading}>
+              <ShieldCheck aria-hidden="true" size={17} />
+              {authLoading ? "Signing in" : "Sign in"}
+            </button>
+          </form>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -93,16 +358,31 @@ export default function Home() {
 
       <section className="workspace">
         <header className="topbar">
-          <div className="search-box">
+          <form className="search-box" onSubmit={handleSearch}>
             <Search aria-hidden="true" size={18} />
-            <input aria-label="Search files, folders, tags, users, and audit logs" placeholder="Search files, folders, tags, users..." />
-          </div>
+            <input
+              aria-label="Search files"
+              name="repositorySearch"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search files by name, extension, description..."
+            />
+            <button type="submit" title="Search files">
+              <Search aria-hidden="true" size={16} />
+            </button>
+          </form>
           <div className="topbar-actions">
+            <button className="icon-button" type="button" title="Refresh" onClick={() => void loadDashboard(token)}>
+              <RefreshCcw aria-hidden="true" size={18} />
+            </button>
             <button className="icon-button" type="button" title="Notifications">
               <Bell aria-hidden="true" size={18} />
             </button>
-            <button className="profile-button" type="button">
-              RK
+            <button className="profile-button" type="button" title={user.email}>
+              {user.fullName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
+            </button>
+            <button className="icon-button" type="button" title="Logout" onClick={handleLogout}>
+              <LogOut aria-hidden="true" size={18} />
             </button>
           </div>
         </header>
@@ -112,7 +392,7 @@ export default function Home() {
             <div>
               <p className="eyebrow">Enterprise MVP Dashboard</p>
               <h1>Company File Repository</h1>
-              <p className="page-copy">Governed documents, RBAC, audit trails, storage health, SMTP alerts, and daily file operations in one ERP-style workspace.</p>
+              <p className="page-copy">Signed in as {user.fullName} with {user.roles.join(", ") || "assigned"} access.</p>
             </div>
             <div className="heading-actions">
               <button className="secondary-button" type="button">
@@ -125,6 +405,9 @@ export default function Home() {
               </button>
             </div>
           </section>
+
+          {error ? <p className="error-banner">{error}</p> : null}
+          {loading && !data ? <p className="loading-banner">Loading live repository data...</p> : null}
 
           <section className="kpi-grid" aria-label="Repository metrics">
             {kpis.map((kpi) => (
@@ -141,19 +424,19 @@ export default function Home() {
               <div className="panel-header">
                 <div>
                   <h2>Repository Workspace</h2>
-                  <p>Role-aware folders and files</p>
+                  <p>{data?.folder?.breadcrumbs.map((item) => item.name).join(" / ") ?? "No folder selected"}</p>
                 </div>
                 <button className="text-button" type="button">View all</button>
               </div>
 
               <div className="toolbar">
-                <button type="button">Department</button>
-                <button type="button">Project</button>
-                <button type="button">Classification</button>
-                <button type="button">Scan Status</button>
+                <button type="button">{data?.roots.length ?? 0} root folders</button>
+                <button type="button">{data?.folder?.children.length ?? 0} child folders</button>
+                <button type="button">{data?.files.length ?? 0} matching files</button>
+                <button type="button">{data?.dashboard.smtpStatus ?? "smtp"} SMTP</button>
               </div>
 
-              <div className="data-table" role="table" aria-label="Repository folders">
+              <div className="data-table" role="table" aria-label="Repository files">
                 <div className="table-row table-head" role="row">
                   <span role="columnheader">Name</span>
                   <span role="columnheader">Owner</span>
@@ -161,22 +444,25 @@ export default function Home() {
                   <span role="columnheader">Status</span>
                   <span role="columnheader">Updated</span>
                 </div>
-                {folders.map((folder) => (
-                  <div className="table-row" role="row" key={folder.name}>
+                {(data?.files ?? []).map((file) => (
+                  <div className="table-row" role="row" key={file.id}>
                     <span role="cell" className="file-name">
-                      <FolderTree aria-hidden="true" size={16} />
-                      {folder.name}
+                      <FileText aria-hidden="true" size={16} />
+                      {file.originalName}
                     </span>
-                    <span role="cell">{folder.owner}</span>
+                    <span role="cell">{file.createdBy?.fullName ?? file.department?.name ?? "System"}</span>
                     <span role="cell">
-                      <span className={`badge ${folder.className.toLowerCase()}`}>{folder.className}</span>
+                      <span className={`badge ${file.classification.toLowerCase()}`}>{titleCase(file.classification)}</span>
                     </span>
                     <span role="cell">
-                      <span className="status">{folder.status}</span>
+                      <span className={`status ${file.currentVersion?.scanStatus.toLowerCase() ?? "pending"}`}>
+                        {titleCase(file.currentVersion?.scanStatus ?? "PENDING")}
+                      </span>
                     </span>
-                    <span role="cell">{folder.updated}</span>
+                    <span role="cell">{formatDate(file.updatedAt)}</span>
                   </div>
                 ))}
+                {data && data.files.length === 0 ? <p className="empty-state">No files match the current search.</p> : null}
               </div>
             </article>
 
@@ -201,14 +487,14 @@ export default function Home() {
               <div className="panel-header">
                 <div>
                   <h2>System Health</h2>
-                  <p>Operational readiness</p>
+                  <p>{data?.health.status ?? "loading"}</p>
                 </div>
               </div>
               <div className="health-list">
-                {health.map((item) => (
+                {(data?.health.checks ?? []).map((item) => (
                   <div className="health-item" key={item.name}>
-                    <span><Database size={16} /> {item.name}</span>
-                    <strong>{item.state}</strong>
+                    <span><Database size={16} /> {titleCase(item.name)}</span>
+                    <strong className={`health-state ${item.status}`}>{titleCase(item.status)}</strong>
                   </div>
                 ))}
               </div>
@@ -222,8 +508,11 @@ export default function Home() {
                 </div>
               </div>
               <ol className="activity-list">
-                {activities.map((activity) => (
-                  <li key={activity}>{activity}</li>
+                {(data?.dashboard.recentActivity ?? []).map((activity) => (
+                  <li key={activity.id}>
+                    <strong>{titleCase(activity.action)}</strong>
+                    <span>{activity.entityName ?? activity.actor} · {formatDate(activity.createdAt)}</span>
+                  </li>
                 ))}
               </ol>
             </article>
