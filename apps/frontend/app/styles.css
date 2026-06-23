@@ -4022,6 +4022,240 @@ h1 {
   font-weight: 700;
 }
 
+.roles-console {
+  display: grid;
+  gap: 16px;
+}
+
+.roles-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.roles-summary-grid article {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+.roles-summary-grid span,
+.role-inspector span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.roles-summary-grid strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--text);
+  font-size: 24px;
+}
+
+.roles-summary-grid p,
+.role-inspector p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.roles-admin-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.role-control-panel {
+  min-width: 0;
+}
+
+.rbac-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.2fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.rbac-form label {
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.rbac-form input,
+.rbac-form select {
+  min-width: 0;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfcfd;
+  color: var(--text);
+  padding: 0 11px;
+}
+
+.rbac-form button {
+  height: 40px;
+  justify-content: center;
+}
+
+.role-inspector {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 13px;
+}
+
+.role-inspector strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--text);
+}
+
+.role-matrix-panel {
+  overflow: hidden;
+}
+
+.role-matrix {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.role-matrix-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.75fr) minmax(0, 1.5fr) auto;
+  gap: 14px;
+  align-items: start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.role-matrix-row.selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.role-matrix-summary {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.role-matrix-summary strong,
+.role-matrix-summary span,
+.role-matrix-summary small {
+  display: block;
+}
+
+.role-matrix-summary strong {
+  margin-top: 8px;
+  font-size: 15px;
+}
+
+.role-matrix-summary > span:not(.role-type-badge),
+.role-matrix-summary small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.role-type-badge {
+  width: fit-content;
+  border-radius: 999px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.role-permission-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.permission-family {
+  display: grid;
+  gap: 7px;
+}
+
+.permission-family > strong {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.permission-chips span.sensitive {
+  background: #fff4ed;
+  color: #b54708;
+}
+
+.permission-chips span button {
+  margin-left: 7px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.permission-chips span button:disabled {
+  cursor: not-allowed;
+}
+
+.role-row-actions {
+  min-width: 130px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.role-row-actions span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 1180px) {
+  .roles-summary-grid,
+  .roles-admin-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .role-matrix-row {
+    grid-template-columns: 1fr;
+  }
+
+  .role-row-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .roles-summary-grid,
+  .roles-admin-grid,
+  .rbac-form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .version-list {
   margin-top: 14px;
 }

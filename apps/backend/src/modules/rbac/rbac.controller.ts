@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { AuthGuard } from "../auth/auth.guard";
 import { RequirePermissions } from "./permissions.decorator";
 import { PermissionsGuard } from "./permissions.guard";
@@ -8,6 +8,12 @@ type RoleCreateBody = {
   name: string;
   code: string;
   description?: string;
+};
+
+type RoleUpdateBody = {
+  name?: string;
+  code?: string;
+  description?: string | null;
 };
 
 @Controller()
@@ -35,6 +41,20 @@ export class RbacController {
     return this.rbac.createRole(body);
   }
 
+  @Patch("roles/:id")
+  @UseGuards(AuthGuard, PermissionsGuard)
+  @RequirePermissions("role.update")
+  updateRole(@Param("id") id: string, @Body() body: RoleUpdateBody) {
+    return this.rbac.updateRole(id, body);
+  }
+
+  @Delete("roles/:id")
+  @UseGuards(AuthGuard, PermissionsGuard)
+  @RequirePermissions("role.deactivate")
+  deleteRole(@Param("id") id: string) {
+    return this.rbac.deleteRole(id);
+  }
+
   @Get("roles/:id/permissions")
   @UseGuards(AuthGuard, PermissionsGuard)
   @RequirePermissions("role.read")
@@ -47,6 +67,13 @@ export class RbacController {
   @RequirePermissions("role.permission.assign")
   assignRolePermission(@Param("id") id: string, @Body() body: { permissionKey: string }) {
     return this.rbac.assignPermission(id, body.permissionKey);
+  }
+
+  @Delete("roles/:id/permissions/:permissionKey")
+  @UseGuards(AuthGuard, PermissionsGuard)
+  @RequirePermissions("role.permission.assign")
+  removeRolePermission(@Param("id") id: string, @Param("permissionKey") permissionKey: string) {
+    return this.rbac.removePermission(id, permissionKey);
   }
 
   @Get("users/:id/effective-permissions")

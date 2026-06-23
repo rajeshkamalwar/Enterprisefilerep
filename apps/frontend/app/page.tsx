@@ -560,9 +560,17 @@ function formatDate(value: string) {
 function titleCase(value: string) {
   return value
     .toLowerCase()
-    .split("_")
+    .split(/[_\-.]/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function permissionFamily(permissionKey: string) {
+  return permissionKey.split(".")[0] ?? "general";
+}
+
+function isSensitivePermission(permissionKey: string) {
+  return ["delete", "deactivate", "assign", "update", "restore", "backup", "smtp", "settings"].some((part) => permissionKey.includes(part));
 }
 
 function summarizeOperationResult(value: unknown) {
@@ -775,6 +783,7 @@ export default function Home() {
   const [roleCode, setRoleCode] = useState("");
   const [roleDescription, setRoleDescription] = useState("");
   const [roleSaving, setRoleSaving] = useState(false);
+  const [roleMessage, setRoleMessage] = useState<string | null>(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsQuotaGb, setSettingsQuotaGb] = useState("");
   const [settingsUploadMb, setSettingsUploadMb] = useState("");
@@ -1063,6 +1072,40 @@ export default function Home() {
     health: canApproveAccess,
     settings: canWriteUsers
   };
+  const roles = data?.roles ?? [];
+  const permissions = data?.permissions ?? [];
+  const selectedRole = roles.find((role) => role.id === rolePermissionRoleId) ?? roles[0] ?? null;
+  const assignedPermissionKeys = new Set(selectedRole?.permissions.map((permission) => permission.permissionKey) ?? []);
+  const unassignedPermissions = selectedRole ? permissions.filter((permission) => !assignedPermissionKeys.has(permission.key)) : permissions;
+  const permissionGroups = useMemo(() => {
+    const groups = new Map<string, PermissionSummary[]>();
+
+    for (const permission of permissions) {
+      const family = permissionFamily(permission.key);
+      groups.set(family, [...(groups.get(family) ?? []), permission]);
+    }
+
+    return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right));
+  }, [permissions]);
+  const rolePermissionGroups = useMemo(() => {
+    return roles.map((role) => {
+      const groups = new Map<string, string[]>();
+
+      for (const permission of role.permissions) {
+        const family = permissionFamily(permission.permissionKey);
+        groups.set(family, [...(groups.get(family) ?? []), permission.permissionKey]);
+      }
+
+      return {
+        ...role,
+        groupCount: groups.size,
+        sensitiveCount: role.permissions.filter((permission) => isSensitivePermission(permission.permissionKey)).length,
+        groups: [...groups.entries()].sort(([left], [right]) => left.localeCompare(right))
+      };
+    });
+  }, [roles]);
+  const sensitivePermissionCount = permissions.filter((permission) => isSensitivePermission(permission.key)).length;
+  const customRoleCount = roles.filter((role) => !role.isSystemRole).length;
 
   async function loadDashboard(
     activeToken: string,
@@ -1800,15 +1843,61 @@ export default function Home() {
 
     setRoleSaving(true);
     setError(null);
+    setRoleMessage(null);
 
     try {
       await apiRequest(`/roles/${rolePermissionRoleId}/permissions`, token, {
         method: "POST",
         body: JSON.stringify({ permissionKey: rolePermissionKey })
       });
+      setRolePermissionKey("");
+      setRoleMessage("Permission assigned.");
       await loadDashboard(token, searchQuery, activeFolderId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to assign permission");
+    } finally {
+      setRoleSaving(false);
+    }
+  }
+
+  async function handleRemoveRolePermission(roleId: string, permissionKey: string) {
+    if (!token) {
+      return;
+    }
+
+    setRoleSaving(true);
+    setError(null);
+    setRoleMessage(null);
+
+    try {
+      await apiRequest(`/roles/${roleId}/permissions/${encodeURIComponent(permissionKey)}`, token, { method: "DELETE" });
+      setRoleMessage("Permission removed.");
+      await loadDashboard(token, searchQuery, activeFolderId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to remove permission");
+    } finally {
+      setRoleSaving(false);
+    }
+  }
+
+  async function handleDeleteRole(role: RoleSummary) {
+    if (!token) {
+      return;
+    }
+
+    setRoleSaving(true);
+    setError(null);
+    setRoleMessage(null);
+
+    try {
+      await apiRequest(`/roles/${role.id}`, token, { method: "DELETE" });
+      if (rolePermissionRoleId === role.id) {
+        setRolePermissionRoleId("");
+      }
+      setRoleMessage(`${role.name} deleted.`);
+      await loadDashboard(token, searchQuery, activeFolderId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to delete role");
     } finally {
       setRoleSaving(false);
     }
@@ -1823,9 +1912,10 @@ export default function Home() {
 
     setRoleSaving(true);
     setError(null);
+    setRoleMessage(null);
 
     try {
-      await apiRequest("/roles", token, {
+      const created = await apiRequest<RoleSummary>("/roles", token, {
         method: "POST",
         body: JSON.stringify({
           name: roleName.trim(),
@@ -1836,6 +1926,8 @@ export default function Home() {
       setRoleName("");
       setRoleCode("");
       setRoleDescription("");
+      setRolePermissionRoleId(created.id);
+      setRoleMessage(`${created.name} created.`);
       await loadDashboard(token, searchQuery, activeFolderId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to create role");
@@ -3246,89 +3338,164 @@ export default function Home() {
           ) : null}
 
           {activeModule === "roles" && moduleAccess.roles ? (
-            <section className="two-column">
-              <article className="panel">
-              <div className="panel-header">
-                <div>
-                  <h2>Roles & RBAC</h2>
-                  <p>{data?.roles?.length ?? 0} roles and {data?.permissions?.length ?? 0} permissions</p>
-                </div>
-              </div>
+            <section className="roles-console">
+              <section className="roles-summary-grid">
+                <article>
+                  <span>Total Roles</span>
+                  <strong>{formatNumber(roles.length)}</strong>
+                  <p>{formatNumber(customRoleCount)} custom roles</p>
+                </article>
+                <article>
+                  <span>Permissions</span>
+                  <strong>{formatNumber(permissions.length)}</strong>
+                  <p>{formatNumber(permissionGroups.length)} permission families</p>
+                </article>
+                <article>
+                  <span>Sensitive Grants</span>
+                  <strong>{formatNumber(sensitivePermissionCount)}</strong>
+                  <p>Delete, restore, settings and assignment powers</p>
+                </article>
+                <article>
+                  <span>Pending Reviews</span>
+                  <strong>{formatNumber(data?.dashboard.pendingAccessRequests ?? 0)}</strong>
+                  <p>Access requests awaiting decision</p>
+                </article>
+              </section>
 
-              <form className="module-filter-bar" onSubmit={handleAssignRolePermission}>
-                <label>
-                  <span>Role</span>
-                  <select value={rolePermissionRoleId} onChange={(event) => setRolePermissionRoleId(event.target.value)}>
-                    <option value="">Select role</option>
-                    {(data?.roles ?? []).map((role) => (
-                      <option value={role.id} key={role.id}>{role.name}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span>Permission</span>
-                  <select value={rolePermissionKey} onChange={(event) => setRolePermissionKey(event.target.value)}>
-                    <option value="">Select permission</option>
-                    {(data?.permissions ?? []).map((permission) => (
-                      <option value={permission.key} key={permission.key}>{permission.key}</option>
-                    ))}
-                  </select>
-                </label>
-                <button className="primary-button" type="submit" disabled={roleSaving || !rolePermissionRoleId || !rolePermissionKey}>
-                  <LockKeyhole aria-hidden="true" size={16} />
-                  Assign
-                </button>
-              </form>
+              {roleMessage ? <p className="form-message">{roleMessage}</p> : null}
 
-              <form className="module-filter-bar" onSubmit={handleCreateRole}>
-                <label>
-                  <span>Role Name</span>
-                  <input value={roleName} onChange={(event) => setRoleName(event.target.value)} placeholder="Compliance Auditor" />
-                </label>
-                <label>
-                  <span>Code</span>
-                  <input value={roleCode} onChange={(event) => setRoleCode(event.target.value)} placeholder="COMPLIANCE_AUDITOR" />
-                </label>
-                <label>
-                  <span>Description</span>
-                  <input value={roleDescription} onChange={(event) => setRoleDescription(event.target.value)} placeholder="Optional" />
-                </label>
-                <button className="secondary-button" type="submit" disabled={roleSaving || !roleName.trim() || !roleCode.trim()}>
-                  <LockKeyhole aria-hidden="true" size={16} />
-                  New Role
-                </button>
-              </form>
-
-              <div className="role-list">
-                {(data?.roles ?? []).map((role) => (
-                  <article className="role-card" key={role.id}>
+              <section className="roles-admin-grid">
+                <article className="panel role-control-panel">
+                  <div className="panel-header">
                     <div>
-                      <strong>{role.name}</strong>
-                      <span>{role.code} · {role.permissions.length} permissions</span>
+                      <h2>Assign Permission</h2>
+                      <p>Grant one capability to a selected role.</p>
                     </div>
-                    <div className="permission-chips">
-                      {role.permissions.slice(0, 8).map((permission) => (
-                        <span key={permission.permissionKey}>{permission.permissionKey}</span>
-                      ))}
-                    </div>
-                  </article>
-                ))}
-              </div>
-              </article>
+                  </div>
 
-              <aside className="panel">
+                  <form className="rbac-form" onSubmit={handleAssignRolePermission}>
+                    <label>
+                      <span>Role</span>
+                      <select value={rolePermissionRoleId} onChange={(event) => setRolePermissionRoleId(event.target.value)}>
+                        <option value="">Select role</option>
+                        {roles.map((role) => (
+                          <option value={role.id} key={role.id}>{role.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Permission</span>
+                      <select value={rolePermissionKey} onChange={(event) => setRolePermissionKey(event.target.value)}>
+                        <option value="">Select permission</option>
+                        {permissionGroups.map(([family, familyPermissions]) => (
+                          <optgroup label={titleCase(family)} key={family}>
+                            {familyPermissions
+                              .filter((permission) => !rolePermissionRoleId || !assignedPermissionKeys.has(permission.key))
+                              .map((permission) => (
+                                <option value={permission.key} key={permission.key}>{permission.key}</option>
+                              ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </label>
+                    <button className="primary-button" type="submit" disabled={roleSaving || !rolePermissionRoleId || !rolePermissionKey}>
+                      <LockKeyhole aria-hidden="true" size={16} />
+                      Assign
+                    </button>
+                  </form>
+
+                  <div className="role-inspector">
+                    <span>Selected Role</span>
+                    <strong>{selectedRole?.name ?? "No role selected"}</strong>
+                    <p>{selectedRole ? `${selectedRole.permissions.length} assigned · ${unassignedPermissions.length} available` : "Choose a role to review assigned capabilities."}</p>
+                  </div>
+                </article>
+
+                <article className="panel role-control-panel">
+                  <div className="panel-header">
+                    <div>
+                      <h2>Create Custom Role</h2>
+                      <p>Use business-friendly role names with stable system codes.</p>
+                    </div>
+                  </div>
+
+                  <form className="rbac-form" onSubmit={handleCreateRole}>
+                    <label>
+                      <span>Role Name</span>
+                      <input value={roleName} onChange={(event) => setRoleName(event.target.value)} placeholder="Compliance Auditor" />
+                    </label>
+                    <label>
+                      <span>Code</span>
+                      <input value={roleCode} onChange={(event) => setRoleCode(event.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_"))} placeholder="COMPLIANCE_AUDITOR" />
+                    </label>
+                    <label>
+                      <span>Description</span>
+                      <input value={roleDescription} onChange={(event) => setRoleDescription(event.target.value)} placeholder="Optional business purpose" />
+                    </label>
+                    <button className="secondary-button" type="submit" disabled={roleSaving || !roleName.trim() || !roleCode.trim()}>
+                      <LockKeyhole aria-hidden="true" size={16} />
+                      New Role
+                    </button>
+                  </form>
+                </article>
+              </section>
+
+              <section className="panel role-matrix-panel">
                 <div className="panel-header">
                   <div>
-                    <h2>RBAC Status</h2>
-                    <p>Access governance controls</p>
+                    <h2>Role Permission Matrix</h2>
+                    <p>Review coverage by module and remove grants from non-critical roles.</p>
                   </div>
                 </div>
-                <div className="module-status-grid compact-status-grid">
-                  <article><strong>Role Gate</strong><span>Enabled</span></article>
-                  <article><strong>Folder Inheritance</strong><span>Enabled</span></article>
-                  <article><strong>Pending Reviews</strong><span>{formatNumber(data?.dashboard.pendingAccessRequests ?? 0)}</span></article>
+
+                <div className="role-matrix">
+                  {rolePermissionGroups.map((role) => (
+                    <article className={rolePermissionRoleId === role.id ? "role-matrix-row selected" : "role-matrix-row"} key={role.id}>
+                      <button className="role-matrix-summary" type="button" onClick={() => setRolePermissionRoleId(role.id)}>
+                        <span className="role-type-badge">{role.isSystemRole ? "System" : "Custom"}</span>
+                        <strong>{role.name}</strong>
+                        <span>{role.code}</span>
+                        <small>{role.permissions.length} permissions · {role.groupCount} modules · {role.sensitiveCount} sensitive</small>
+                      </button>
+                      <div className="role-permission-groups">
+                        {role.groups.map(([family, familyPermissions]) => (
+                          <div className="permission-family" key={`${role.id}-${family}`}>
+                            <strong>{titleCase(family)}</strong>
+                            <div className="permission-chips">
+                              {familyPermissions.map((permissionKey) => (
+                                <span className={isSensitivePermission(permissionKey) ? "sensitive" : ""} key={permissionKey}>
+                                  {permissionKey}
+                                  {role.code !== "SUPER_ADMIN" ? (
+                                    <button
+                                      type="button"
+                                      title={`Remove ${permissionKey}`}
+                                      disabled={roleSaving}
+                                      onClick={() => void handleRemoveRolePermission(role.id, permissionKey)}
+                                    >
+                                      x
+                                    </button>
+                                  ) : null}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="role-row-actions">
+                        {!role.isSystemRole ? (
+                          <button className="row-text-button danger" type="button" disabled={roleSaving} onClick={() => void handleDeleteRole(role)}>
+                            Delete Role
+                          </button>
+                        ) : (
+                          <span>Protected system role</span>
+                        )}
+                      </div>
+                    </article>
+                  ))}
                 </div>
-              </aside>
+
+                {rolePermissionGroups.length === 0 ? <p className="empty-state">No roles configured.</p> : null}
+              </section>
             </section>
           ) : null}
 

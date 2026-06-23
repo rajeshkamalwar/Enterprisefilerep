@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ResourceType, SubjectType } from "@prisma/client";
 import { AuthenticatedUser } from "../auth/auth.guard";
 import { PrismaService } from "../database/prisma.service";
@@ -56,6 +56,63 @@ export class RbacService {
     });
   }
 
+  async updateRole(id: string, input: { name?: string; code?: string; description?: string | null }) {
+    const existing = await this.prisma.role.findUnique({ where: { id } });
+
+    if (!existing) {
+      throw new NotFoundException("Role not found");
+    }
+
+    if (existing.isSystemRole && input.code && input.code.toUpperCase() !== existing.code) {
+      throw new BadRequestException("System role code cannot be changed");
+    }
+
+    return this.prisma.role.update({
+      where: { id },
+      data: {
+        name: input.name?.trim() || undefined,
+        code: input.code?.trim().toUpperCase() || undefined,
+        description: input.description === null ? null : input.description?.trim() || undefined
+      },
+      include: {
+        permissions: {
+          include: {
+            permission: true
+          }
+        }
+      }
+    });
+  }
+
+  async deleteRole(id: string) {
+    const existing = await this.prisma.role.findUnique({
+      where: { id },
+      include: {
+        users: true,
+        permissions: true
+      }
+    });
+
+    if (!existing) {
+      throw new NotFoundException("Role not found");
+    }
+
+    if (existing.isSystemRole) {
+      throw new BadRequestException("System roles cannot be deleted");
+    }
+
+    if (existing.users.length > 0) {
+      throw new ConflictException("Role cannot be deleted while users are assigned to it");
+    }
+
+    await this.prisma.$transaction([
+      this.prisma.rolePermission.deleteMany({ where: { roleId: id } }),
+      this.prisma.role.delete({ where: { id } })
+    ]);
+
+    return { deleted: true };
+  }
+
   async assignPermission(roleId: string, permissionKey: string, actorUserId?: string) {
     const assignment = await this.prisma.rolePermission.upsert({
       where: {
@@ -82,6 +139,27 @@ export class RbacService {
     });
 
     return assignment;
+  }
+
+  async removePermission(roleId: string, permissionKey: string) {
+    const role = await this.prisma.role.findUnique({ where: { id: roleId } });
+
+    if (!role) {
+      throw new NotFoundException("Role not found");
+    }
+
+    if (role.isSystemRole && role.code === "SUPER_ADMIN") {
+      throw new BadRequestException("Super Admin permissions cannot be removed");
+    }
+
+    await this.prisma.rolePermission.deleteMany({
+      where: {
+        roleId,
+        permissionKey
+      }
+    });
+
+    return { removed: true };
   }
 
   async rolePermissions(roleId: string) {
