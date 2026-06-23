@@ -3525,6 +3525,9 @@ export default function Home() {
               ) : null}
               <p className="upload-policy-note">{uploadPolicyText}</p>
               <p className="upload-policy-note">
+                Owner: {user?.fullName ?? user?.email ?? "Current user"}. The uploaded file is linked to the signed-in user.
+              </p>
+              <p className="upload-policy-note">
                 Department: {currentFolderDepartmentName}. Files inherit department from the selected folder.
               </p>
 
