@@ -701,6 +701,86 @@ export class RepositoryService {
     return this.serializeFile(updated);
   }
 
+  async updateFileOwner(input: { fileId: string; ownerUserId: string; user: AuthenticatedUser }) {
+    const file = await this.prisma.repositoryFile.findUnique({
+      where: { id: input.fileId },
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            departmentId: true
+          }
+        }
+      }
+    });
+
+    if (!file || file.isDeleted) {
+      throw new NotFoundException("File not found");
+    }
+
+    await this.rbac.assertResourceAccess({
+      user: input.user,
+      permissionKey: "file.update",
+      resourceType: ResourceType.FILE,
+      resourceId: file.id
+    });
+
+    const owner = await this.prisma.user.findUnique({
+      where: { id: input.ownerUserId },
+      select: {
+        id: true,
+        fullName: true,
+        email: true,
+        departmentId: true,
+        status: true
+      }
+    });
+
+    if (!owner || owner.status !== "ACTIVE") {
+      throw new BadRequestException("Active owner user not found");
+    }
+
+    if (!input.user.roles.includes("SUPER_ADMIN") && owner.departmentId !== file.departmentId) {
+      throw new BadRequestException("Department admins can assign files only to users in the file department");
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const updatedFile = await tx.repositoryFile.update({
+        where: { id: file.id },
+        data: {
+          createdById: owner.id
+        },
+        include: this.fileListInclude()
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: input.user.id,
+          action: "FILE_OWNER_UPDATED",
+          entityType: "file",
+          entityId: file.id,
+          entityName: file.originalName,
+          oldValueJson: {
+            ownerUserId: file.createdBy.id,
+            ownerName: file.createdBy.fullName,
+            ownerEmail: file.createdBy.email
+          },
+          newValueJson: {
+            ownerUserId: owner.id,
+            ownerName: owner.fullName,
+            ownerEmail: owner.email
+          }
+        }
+      });
+
+      return updatedFile;
+    });
+
+    return this.serializeFile(updated);
+  }
+
   async deleteFile(id: string, user: AuthenticatedUser) {
     const file = await this.prisma.repositoryFile.findUnique({ where: { id } });
 

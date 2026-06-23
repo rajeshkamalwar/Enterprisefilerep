@@ -4103,6 +4103,45 @@ h1 {
   max-width: 460px;
 }
 
+.owner-allocation-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  margin: 0 16px 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.owner-allocation-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.owner-allocation-form label span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.owner-allocation-form select {
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--text);
+  padding: 0 10px;
+}
+
+@media (max-width: 720px) {
+  .owner-allocation-form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .review-item {
   align-items: flex-start;
 }

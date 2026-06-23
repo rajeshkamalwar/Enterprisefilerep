@@ -144,6 +144,7 @@ type RepositoryFile = {
     pathCache: string | null;
   };
   createdBy?: {
+    id?: string;
     fullName: string;
     email: string;
   };
@@ -735,6 +736,8 @@ export default function Home() {
   const [selectedFile, setSelectedFile] = useState<RepositoryFile | null>(null);
   const [fileDetailOpen, setFileDetailOpen] = useState(false);
   const [fileActionMessage, setFileActionMessage] = useState<string | null>(null);
+  const [fileOwnerUserId, setFileOwnerUserId] = useState("");
+  const [fileOwnerSaving, setFileOwnerSaving] = useState(false);
   const [rolePermissionRoleId, setRolePermissionRoleId] = useState("");
   const [rolePermissionKey, setRolePermissionKey] = useState("");
   const [roleName, setRoleName] = useState("");
@@ -1046,7 +1049,7 @@ export default function Home() {
       const shouldLoadDashboard = moduleContext === "dashboard";
       const shouldLoadHealth = moduleContext === "dashboard" || moduleContext === "health";
       const shouldLoadAccess = moduleContext === "dashboard" || moduleContext === "access";
-      const shouldLoadUsers = moduleContext === "users";
+      const shouldLoadUsers = moduleContext === "repository" || moduleContext === "users";
       const shouldLoadDepartmentOptions = moduleContext === "repository" || moduleContext === "users";
       const shouldLoadDepartments = moduleContext === "repository" || moduleContext === "departments" || moduleContext === "users";
       const shouldLoadAudit = moduleContext === "audit";
@@ -1094,7 +1097,7 @@ export default function Home() {
         canApproveAccess && shouldLoadAccess
           ? apiRequest<{ data: AccessRequest[] }>("/access-requests?status=PENDING&pageSize=5", activeToken)
           : Promise.resolve({ data: data?.approvalRequests ?? [] }),
-        canReadUsers && shouldLoadUsers ? apiRequest<{ data: ManagedUser[] }>("/users?pageSize=6", activeToken) : Promise.resolve({ data: data?.managedUsers ?? [] }),
+        canReadUsers && shouldLoadUsers ? apiRequest<{ data: ManagedUser[] }>("/users?pageSize=100", activeToken) : Promise.resolve({ data: data?.managedUsers ?? [] }),
         canReadUsers && shouldLoadDepartmentOptions ? apiRequest<UserOptions>("/users/options", activeToken) : Promise.resolve(data?.userOptions ?? emptyUserOptions),
         canManageDepartments && shouldLoadDepartments ? apiRequest<{ data: ManagedDepartment[] }>("/departments?pageSize=8", activeToken) : Promise.resolve({ data: data?.departments ?? [] }),
         canApproveAccess && shouldLoadAudit
@@ -1474,6 +1477,8 @@ export default function Home() {
     try {
       const detail = await apiRequest<RepositoryFile>(`/files/${file.id}`, token);
       setSelectedFile(detail);
+      setFileOwnerUserId(detail.createdBy?.id ?? "");
+      setFileActionMessage(null);
       setFileDetailOpen(true);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to open file");
@@ -1525,6 +1530,33 @@ export default function Home() {
       await loadDashboard(token, searchQuery, activeFolderId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to restore version");
+    }
+  }
+
+  async function handleUpdateFileOwner(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!token || !selectedFile || !fileOwnerUserId) {
+      return;
+    }
+
+    setFileOwnerSaving(true);
+    setFileActionMessage(null);
+    setError(null);
+
+    try {
+      const updated = await apiRequest<RepositoryFile>(`/files/${selectedFile.id}/owner`, token, {
+        method: "PATCH",
+        body: JSON.stringify({ ownerUserId: fileOwnerUserId })
+      });
+      setSelectedFile(updated);
+      setFileOwnerUserId(updated.createdBy?.id ?? "");
+      setFileActionMessage("Owner allocation updated.");
+      await loadDashboard(token, searchQuery, activeFolderId, undefined, undefined, "repository");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to update file owner");
+    } finally {
+      setFileOwnerSaving(false);
     }
   }
 
@@ -3328,7 +3360,27 @@ export default function Home() {
               <article><strong>Classification</strong><span>{titleCase(selectedFile.classification)}</span></article>
               <article><strong>Scan</strong><span>{titleCase(selectedFile.currentVersion?.scanStatus ?? "pending")}</span></article>
               <article><strong>Size</strong><span>{selectedFile.currentVersion ? formatBytes(Number(selectedFile.currentVersion.sizeBytes)) : "0 B"}</span></article>
+              <article><strong>Owner</strong><span>{selectedFile.createdBy?.fullName ?? "Unassigned"}</span></article>
             </div>
+            <form className="owner-allocation-form" onSubmit={handleUpdateFileOwner}>
+              <label>
+                <span>Owner Allocation</span>
+                <select value={fileOwnerUserId} onChange={(event) => setFileOwnerUserId(event.target.value)}>
+                  <option value="">Select owner</option>
+                  {selectedFile.createdBy?.id && !data?.managedUsers.some((managedUser) => managedUser.id === selectedFile.createdBy?.id) ? (
+                    <option value={selectedFile.createdBy.id}>{selectedFile.createdBy.fullName}</option>
+                  ) : null}
+                  {(data?.managedUsers ?? []).map((managedUser) => (
+                    <option value={managedUser.id} key={managedUser.id}>
+                      {managedUser.fullName} · {managedUser.department?.code ?? "No Dept"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="primary-button" type="submit" disabled={fileOwnerSaving || !fileOwnerUserId}>
+                {fileOwnerSaving ? "Saving" : "Save Owner"}
+              </button>
+            </form>
             <div className="request-list version-list">
               {(selectedFile.versions ?? []).map((version) => (
                 <div className="request-item" key={version.id}>

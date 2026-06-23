@@ -119,6 +119,16 @@ export class FilesController {
     });
   }
 
+  @Patch(":id/owner")
+  @RequirePermissions("file.update")
+  updateOwner(@Param("id") id: string, @Body() body: { ownerUserId: string }, @CurrentUser() user: AuthenticatedUser) {
+    return this.repository.updateFileOwner({
+      fileId: id,
+      ownerUserId: body.ownerUserId,
+      user
+    });
+  }
+
   @Delete(":id")
   @RequirePermissions("file.delete")
   deleteFile(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser) {
