@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser, AuthGuard } from "../auth/auth.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { RequirePermissions } from "../rbac/permissions.decorator";
@@ -9,6 +9,10 @@ type CreateFolderBody = {
   name: string;
   parentId?: string;
   departmentId?: string;
+};
+
+type UpdateFolderBody = {
+  name: string;
 };
 
 @UseGuards(AuthGuard, PermissionsGuard)
@@ -30,6 +34,16 @@ export class FoldersController {
   createFolder(@Body() body: CreateFolderBody, @CurrentUser() user: AuthenticatedUser) {
     return this.repository.createFolder({
       ...body,
+      actorUser: user
+    });
+  }
+
+  @Patch(":id")
+  @RequirePermissions("folder.update")
+  updateFolder(@Param("id") id: string, @Body() body: UpdateFolderBody, @CurrentUser() user: AuthenticatedUser) {
+    return this.repository.updateFolder({
+      id,
+      name: body.name,
       actorUser: user
     });
   }

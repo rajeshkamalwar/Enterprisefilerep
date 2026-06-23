@@ -397,6 +397,20 @@ h1 {
   margin-top: 4px;
 }
 
+.panel-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.panel-actions .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .text-button {
   color: var(--primary);
   background: transparent;
@@ -415,6 +429,70 @@ h1 {
   border-color: var(--border);
   padding: 7px 10px;
   color: #344054;
+}
+
+.breadcrumb-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.breadcrumb-list button {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fbfcfd;
+  color: var(--primary);
+  min-height: 30px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.folder-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.folder-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 8px;
+}
+
+.folder-card > button:first-child {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.folder-card span {
+  min-width: 0;
+}
+
+.folder-card strong,
+.folder-card small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.folder-card small {
+  color: var(--muted);
+  margin-top: 3px;
+  font-size: 12px;
 }
 
 .data-table {
@@ -963,6 +1041,7 @@ h1 {
 
   .user-row,
   .department-row,
+  .folder-grid,
   .form-grid,
   .role-checks {
     grid-template-columns: 1fr;

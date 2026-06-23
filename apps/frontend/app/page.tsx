@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   ArchiveRestore,
+  ArrowLeft,
   Bell,
   Building2,
   CheckCircle2,
@@ -11,6 +12,7 @@ import {
   Database,
   Download,
   FileText,
+  FolderPlus,
   FolderTree,
   Gauge,
   Heart,
@@ -19,6 +21,7 @@ import {
   LockKeyhole,
   LogOut,
   Mail,
+  Pencil,
   RefreshCcw,
   Search,
   ServerCog,
@@ -81,8 +84,12 @@ type HealthResponse = {
 
 type FolderSummary = {
   id: string;
+  parentId: string | null;
   name: string;
+  pathCache: string | null;
+  departmentId: string | null;
   department?: {
+    id?: string;
     name: string;
     code: string;
   } | null;
@@ -115,6 +122,13 @@ type RepositoryFile = {
 };
 
 type FolderDetail = {
+  folder: {
+    id: string;
+    parentId: string | null;
+    name: string;
+    pathCache: string | null;
+    departmentId: string | null;
+  };
   breadcrumbs: Array<{ id: string; name: string }>;
   children: FolderSummary[];
   files: RepositoryFile[];
@@ -353,6 +367,7 @@ export default function Home() {
   const [email, setEmail] = useState("admin@company.com");
   const [password, setPassword] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [data, setData] = useState<AppData | null>(null);
   const [loading, setLoading] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
@@ -363,6 +378,12 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
   const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
+  const [folderModalOpen, setFolderModalOpen] = useState(false);
+  const [editingFolder, setEditingFolder] = useState<FolderSummary | FolderDetail["folder"] | null>(null);
+  const [folderName, setFolderName] = useState("");
+  const [folderDepartmentId, setFolderDepartmentId] = useState("");
+  const [folderSaving, setFolderSaving] = useState(false);
+  const [folderMessage, setFolderMessage] = useState<string | null>(null);
   const [accessModalOpen, setAccessModalOpen] = useState(false);
   const [accessResourceType, setAccessResourceType] = useState("FOLDER");
   const [accessResourceId, setAccessResourceId] = useState("");
@@ -430,7 +451,7 @@ export default function Home() {
   const canWriteUsers = Boolean(user?.roles.includes("SUPER_ADMIN"));
   const canManageDepartments = Boolean(user?.roles.includes("SUPER_ADMIN"));
 
-  async function loadDashboard(activeToken: string, query = searchQuery) {
+  async function loadDashboard(activeToken: string, query = searchQuery, folderId = activeFolderId) {
     setLoading(true);
     setError(null);
 
@@ -467,17 +488,19 @@ export default function Home() {
         canManageDepartments ? apiRequest<{ data: ManagedDepartment[] }>("/departments?pageSize=8", activeToken) : Promise.resolve({ data: [] })
       ]);
 
-      const rootFolder = roots.data[0];
-      const folder = rootFolder
-        ? await apiRequest<FolderDetail>(`/folders/${rootFolder.id}`, activeToken)
+      const selectedFolderId = folderId ?? roots.data[0]?.id ?? null;
+      const folder = selectedFolderId
+        ? await apiRequest<FolderDetail>(`/folders/${selectedFolderId}`, activeToken)
         : null;
+
+      setActiveFolderId(selectedFolderId);
 
       setData({
         dashboard,
         health,
         roots: roots.data,
         folder,
-        files: fileSearch.data,
+        files: query.trim() ? fileSearch.data : folder?.files ?? fileSearch.data,
         myAccessRequests: myAccessRequests.data,
         approvalRequests: approvalRequests.data,
         managedUsers: managedUsers.data,
@@ -551,7 +574,7 @@ export default function Home() {
       return;
     }
 
-    const folderId = data?.roots[0]?.id;
+    const folderId = data?.folder?.folder.id ?? activeFolderId ?? data?.roots[0]?.id;
 
     if (!folderId) {
       setError("No destination folder is available.");
@@ -587,7 +610,7 @@ export default function Home() {
         // Queue workers handle scanning in production; the admin scan call is a local-dev convenience.
       }
 
-      await loadDashboard(token, searchQuery);
+      await loadDashboard(token, searchQuery, folderId);
       setUploadFile(null);
       setUploadDescription("");
       setUploadOpen(false);
@@ -638,6 +661,78 @@ export default function Home() {
       setError(caught instanceof Error ? caught.message : "Download failed");
     } finally {
       setDownloadingFileId(null);
+    }
+  }
+
+  async function handleOpenFolder(folderId: string | null) {
+    if (!token) {
+      setError("Please sign in before browsing folders.");
+      return;
+    }
+
+    setActiveFolderId(folderId);
+    await loadDashboard(token, searchQuery, folderId);
+  }
+
+  function openCreateFolder() {
+    setEditingFolder(null);
+    setFolderName("");
+    setFolderDepartmentId(data?.folder?.folder.departmentId ?? data?.userOptions.departments[0]?.id ?? "");
+    setFolderMessage(null);
+    setFolderModalOpen(true);
+  }
+
+  function openEditFolder(folder: FolderSummary | FolderDetail["folder"]) {
+    setEditingFolder(folder);
+    setFolderName(folder.name);
+    setFolderDepartmentId(folder.departmentId ?? "");
+    setFolderMessage(null);
+    setFolderModalOpen(true);
+  }
+
+  async function handleSaveFolder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!token) {
+      setError("Please sign in before managing folders.");
+      return;
+    }
+
+    if (!folderName.trim()) {
+      setFolderMessage("Folder name is required.");
+      return;
+    }
+
+    setFolderSaving(true);
+    setFolderMessage(null);
+    setError(null);
+
+    try {
+      if (editingFolder) {
+        await apiRequest<FolderSummary>(`/folders/${editingFolder.id}`, token, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: folderName.trim()
+          })
+        });
+      } else {
+        await apiRequest<FolderSummary>("/folders", token, {
+          method: "POST",
+          body: JSON.stringify({
+            name: folderName.trim(),
+            parentId: data?.folder?.folder.id ?? activeFolderId ?? undefined,
+            departmentId: data?.folder?.folder.id ? undefined : folderDepartmentId || undefined
+          })
+        });
+      }
+
+      await loadDashboard(token, searchQuery, data?.folder?.folder.id ?? activeFolderId);
+      setFolderModalOpen(false);
+      setFolderMessage(editingFolder ? "Folder renamed." : "Folder created.");
+    } catch (caught) {
+      setFolderMessage(caught instanceof Error ? caught.message : "Unable to save folder");
+    } finally {
+      setFolderSaving(false);
     }
   }
 
@@ -1029,6 +1124,7 @@ export default function Home() {
 
           {error ? <p className="error-banner">{error}</p> : null}
           {uploadMessage ? <p className="loading-banner">{uploadMessage}</p> : null}
+          {folderMessage ? <p className="loading-banner">{folderMessage}</p> : null}
           {accessMessage ? <p className="loading-banner">{accessMessage}</p> : null}
           {userMessage ? <p className="loading-banner">{userMessage}</p> : null}
           {departmentMessage ? <p className="loading-banner">{departmentMessage}</p> : null}
@@ -1049,16 +1145,61 @@ export default function Home() {
               <div className="panel-header">
                 <div>
                   <h2>Repository Workspace</h2>
-                  <p>{data?.folder?.breadcrumbs.map((item) => item.name).join(" / ") ?? "No folder selected"}</p>
+                  <p>{data?.folder?.folder.pathCache ?? "No folder selected"}</p>
                 </div>
-                <button className="text-button" type="button">View all</button>
+                <div className="panel-actions">
+                  <button
+                    className="text-button"
+                    type="button"
+                    disabled={!data?.folder?.folder.parentId}
+                    onClick={() => void handleOpenFolder(data?.folder?.folder.parentId ?? null)}
+                  >
+                    <ArrowLeft aria-hidden="true" size={15} />
+                    Up
+                  </button>
+                  <button className="text-button" type="button" onClick={openCreateFolder}>
+                    <FolderPlus aria-hidden="true" size={15} />
+                    New Folder
+                  </button>
+                  {data?.folder?.folder ? (
+                    <button className="text-button" type="button" onClick={() => openEditFolder(data.folder!.folder)}>
+                      <Pencil aria-hidden="true" size={15} />
+                      Rename
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="breadcrumb-list" aria-label="Folder breadcrumbs">
+                {(data?.folder?.breadcrumbs ?? []).map((crumb) => (
+                  <button type="button" key={crumb.id} onClick={() => void handleOpenFolder(crumb.id)}>
+                    {crumb.name}
+                  </button>
+                ))}
               </div>
 
               <div className="toolbar">
                 <button type="button">{data?.roots.length ?? 0} root folders</button>
                 <button type="button">{data?.folder?.children.length ?? 0} child folders</button>
-                <button type="button">{data?.files.length ?? 0} matching files</button>
+                <button type="button">{data?.files.length ?? 0} {searchQuery.trim() ? "matching" : "folder"} files</button>
                 <button type="button">{data?.dashboard.smtpStatus ?? "smtp"} SMTP</button>
+              </div>
+
+              <div className="folder-grid" aria-label="Child folders">
+                {(data?.folder?.children ?? []).map((folder) => (
+                  <article className="folder-card" key={folder.id}>
+                    <button type="button" onClick={() => void handleOpenFolder(folder.id)}>
+                      <FolderTree aria-hidden="true" size={18} />
+                      <span>
+                        <strong>{folder.name}</strong>
+                        <small>{folder.childFolderCount} folders · {folder.fileCount} files</small>
+                      </span>
+                    </button>
+                    <button className="row-icon-button" type="button" title={`Rename ${folder.name}`} onClick={() => openEditFolder(folder)}>
+                      <Pencil aria-hidden="true" size={14} />
+                    </button>
+                  </article>
+                ))}
               </div>
 
               <div className="data-table" role="table" aria-label="Repository files">
@@ -1346,13 +1487,58 @@ export default function Home() {
         </div>
       </section>
 
+      {folderModalOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel" aria-label={editingFolder ? "Rename folder" : "Create folder"}>
+            <div className="panel-header">
+              <div>
+                <h2>{editingFolder ? "Rename Folder" : "New Folder"}</h2>
+                <p>{data?.folder?.folder.pathCache ?? "Repository root"}</p>
+              </div>
+              <button className="text-button" type="button" onClick={() => setFolderModalOpen(false)}>
+                Close
+              </button>
+            </div>
+
+            <form className="upload-form" onSubmit={handleSaveFolder}>
+              <label>
+                <span>Folder Name</span>
+                <input value={folderName} onChange={(event) => setFolderName(event.target.value)} />
+              </label>
+
+              {!editingFolder && !data?.folder?.folder.id ? (
+                <label>
+                  <span>Department</span>
+                  <select value={folderDepartmentId} onChange={(event) => setFolderDepartmentId(event.target.value)}>
+                    <option value="">Unassigned</option>
+                    {(data?.userOptions.departments ?? []).map((department) => (
+                      <option value={department.id} key={department.id}>{department.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+
+              <div className="modal-actions">
+                <button className="secondary-button" type="button" onClick={() => setFolderModalOpen(false)}>
+                  Cancel
+                </button>
+                <button className="primary-button" type="submit" disabled={folderSaving}>
+                  <FolderPlus aria-hidden="true" size={17} />
+                  {folderSaving ? "Saving" : editingFolder ? "Rename" : "Create"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
       {uploadOpen ? (
         <div className="modal-backdrop" role="presentation">
           <section className="modal-panel" aria-label="Upload file">
             <div className="panel-header">
               <div>
                 <h2>Upload File</h2>
-                <p>{data?.roots[0]?.name ?? "Company Repository"}</p>
+                <p>{data?.folder?.folder.pathCache ?? data?.roots[0]?.name ?? "Company Repository"}</p>
               </div>
               <button className="text-button" type="button" onClick={() => setUploadOpen(false)}>
                 Close

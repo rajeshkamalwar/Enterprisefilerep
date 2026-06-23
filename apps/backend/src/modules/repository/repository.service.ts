@@ -136,6 +136,94 @@ export class RepositoryService {
     return folder;
   }
 
+  async updateFolder(input: { id: string; name: string; actorUser: AuthenticatedUser }) {
+    const folderName = input.name.trim();
+
+    if (!folderName) {
+      throw new BadRequestException("Folder name is required");
+    }
+
+    const existing = await this.prisma.folder.findUnique({
+      where: { id: input.id }
+    });
+
+    if (!existing || existing.isDeleted) {
+      throw new NotFoundException("Folder not found");
+    }
+
+    await this.rbac.assertResourceAccess({
+      user: input.actorUser,
+      permissionKey: "folder.update",
+      resourceType: ResourceType.FOLDER,
+      resourceId: existing.id
+    });
+
+    const duplicate = await this.prisma.folder.findFirst({
+      where: {
+        id: { not: existing.id },
+        parentId: existing.parentId,
+        name: folderName,
+        isDeleted: false
+      }
+    });
+
+    if (duplicate) {
+      throw new ConflictException("A folder with this name already exists in the same location");
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const parent = existing.parentId
+        ? await tx.folder.findUnique({
+            where: { id: existing.parentId },
+            select: {
+              pathCache: true
+            }
+          })
+        : null;
+
+      const pathCache = parent?.pathCache ? `${parent.pathCache}/${folderName}` : folderName;
+      const updated = await tx.folder.update({
+        where: { id: existing.id },
+        data: {
+          name: folderName,
+          pathCache,
+          updatedById: input.actorUser.id
+        },
+        include: {
+          department: {
+            select: {
+              id: true,
+              name: true,
+              code: true
+            }
+          }
+        }
+      });
+
+      await this.rebuildChildPathCaches(tx, updated.id, pathCache);
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: input.actorUser.id,
+          action: "FOLDER_UPDATED",
+          entityType: "folder",
+          entityId: updated.id,
+          entityName: updated.name,
+          oldValueJson: {
+            name: existing.name,
+            pathCache: existing.pathCache
+          },
+          newValueJson: {
+            name: updated.name,
+            pathCache: updated.pathCache
+          }
+        }
+      });
+
+      return this.serializeFolder(updated);
+    });
+  }
+
   async getFolder(id: string, user: AuthenticatedUser) {
     const folder = await this.prisma.folder.findUnique({
       where: { id },
@@ -517,6 +605,32 @@ export class RepositoryService {
     );
 
     return decisions.filter((decision) => decision.allowed).map((decision) => decision.file);
+  }
+
+  private async rebuildChildPathCaches(
+    tx: Prisma.TransactionClient,
+    parentId: string,
+    parentPath: string
+  ): Promise<void> {
+    const children = await tx.folder.findMany({
+      where: {
+        parentId,
+        isDeleted: false
+      },
+      select: {
+        id: true,
+        name: true
+      }
+    });
+
+    for (const child of children) {
+      const childPath = `${parentPath}/${child.name}`;
+      await tx.folder.update({
+        where: { id: child.id },
+        data: { pathCache: childPath }
+      });
+      await this.rebuildChildPathCaches(tx, child.id, childPath);
+    }
   }
 
   private extensionFromName(name: string) {
