@@ -253,6 +253,76 @@ export class UsersService {
     return this.serializeUser(updated);
   }
 
+  async delete(id: string, actor: AuthenticatedUser) {
+    if (id === actor.id) {
+      throw new BadRequestException("You cannot delete your own signed-in account");
+    }
+
+    const actorContext = await this.actorContext(actor);
+    const existing = await this.prisma.user.findUnique({
+      where: { id },
+      include: {
+        roles: {
+          include: {
+            role: true
+          }
+        }
+      }
+    });
+
+    if (!existing) {
+      throw new NotFoundException("User not found");
+    }
+
+    this.ensureUserAllowed(existing.departmentId, actorContext);
+
+    if (!actor.roles.includes("SUPER_ADMIN") && existing.roles.some((link) => link.role.code === "SUPER_ADMIN")) {
+      throw new ForbiddenException("Department admins cannot delete super admins");
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.userSession.updateMany({
+        where: {
+          userId: id,
+          revokedAt: null
+        },
+        data: {
+          revokedAt: new Date()
+        }
+      });
+
+      const user = await tx.user.update({
+        where: { id },
+        data: {
+          status: UserStatus.DEACTIVATED
+        },
+        include: this.userInclude()
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorUserId: actor.id,
+          action: "USER_DELETED",
+          entityType: "user",
+          entityId: id,
+          entityName: existing.email,
+          oldValueJson: {
+            status: existing.status,
+            email: existing.email,
+            departmentId: existing.departmentId
+          },
+          newValueJson: {
+            status: UserStatus.DEACTIVATED
+          }
+        }
+      });
+
+      return user;
+    });
+
+    return this.serializeUser(updated);
+  }
+
   private async actorContext(actor: AuthenticatedUser) {
     const user = await this.prisma.user.findUnique({
       where: { id: actor.id },

@@ -773,6 +773,7 @@ export default function Home() {
   const [accessMessage, setAccessMessage] = useState<string | null>(null);
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<ManagedUser | null>(null);
+  const [viewingUser, setViewingUser] = useState<ManagedUser | null>(null);
   const [userFullName, setUserFullName] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [userPassword, setUserPassword] = useState("");
@@ -784,6 +785,7 @@ export default function Home() {
   const [userSaving, setUserSaving] = useState(false);
   const [userMessage, setUserMessage] = useState<string | null>(null);
   const [userStatusUpdatingId, setUserStatusUpdatingId] = useState<string | null>(null);
+  const [userDeletingId, setUserDeletingId] = useState<string | null>(null);
   const [departmentModalOpen, setDepartmentModalOpen] = useState(false);
   const [editingDepartment, setEditingDepartment] = useState<ManagedDepartment | null>(null);
   const [viewingDepartment, setViewingDepartment] = useState<ManagedDepartment | null>(null);
@@ -2027,6 +2029,37 @@ export default function Home() {
     }
   }
 
+  async function handleDeleteUser(target: ManagedUser) {
+    if (!token) {
+      setError("Please sign in before managing users.");
+      return;
+    }
+
+    if (target.id === user?.id) {
+      setUserMessage("You cannot delete your own signed-in account.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete user ${target.fullName}? The account will be deactivated and active sessions revoked.`);
+    if (!confirmed) {
+      return;
+    }
+
+    setUserDeletingId(target.id);
+    setUserMessage(null);
+    setError(null);
+
+    try {
+      await apiRequest<ManagedUser>(`/users/${target.id}`, token, { method: "DELETE" });
+      await loadDashboard(token, searchQuery, activeFolderId, undefined, undefined, "users");
+      setUserMessage("User deleted.");
+    } catch (caught) {
+      setUserMessage(caught instanceof Error ? caught.message : "Unable to delete user");
+    } finally {
+      setUserDeletingId(null);
+    }
+  }
+
   function openCreateDepartment() {
     setEditingDepartment(null);
     setDepartmentName("");
@@ -2934,6 +2967,9 @@ export default function Home() {
                     </span>
                     <span role="cell">{managedUser.lastLoginAt ? formatDate(managedUser.lastLoginAt) : "Never"}</span>
                     <span role="cell" className="user-actions">
+                      <button className="row-text-button" type="button" onClick={() => setViewingUser(managedUser)}>
+                        View
+                      </button>
                       {canWriteUsers ? (
                         <>
                           <button className="row-text-button" type="button" onClick={() => openEditUser(managedUser)}>
@@ -2947,9 +2983,18 @@ export default function Home() {
                           >
                             {managedUser.status === "ACTIVE" ? "Suspend" : "Activate"}
                           </button>
+                          <button
+                            className="row-text-button danger"
+                            type="button"
+                            disabled={userDeletingId === managedUser.id || managedUser.status === "DEACTIVATED" || managedUser.id === user?.id}
+                            title={managedUser.id === user?.id ? "You cannot delete your own signed-in account" : "Delete user"}
+                            onClick={() => void handleDeleteUser(managedUser)}
+                          >
+                            Delete
+                          </button>
                         </>
                       ) : (
-                        "View"
+                        null
                       )}
                     </span>
                   </div>
@@ -3804,6 +3849,59 @@ export default function Home() {
                 </button>
               </div>
             </form>
+          </section>
+        </div>
+      ) : null}
+
+      {viewingUser ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel wide-modal" aria-label="User details">
+            <div className="panel-header">
+              <div>
+                <h2>{viewingUser.fullName}</h2>
+                <p>{viewingUser.email}</p>
+              </div>
+              <button className="text-button" type="button" onClick={() => setViewingUser(null)}>
+                Close
+              </button>
+            </div>
+
+            <div className="module-status-grid">
+              <article><strong>Status</strong><span>{titleCase(viewingUser.status)}</span></article>
+              <article><strong>Department</strong><span>{viewingUser.department?.name ?? "Unassigned"}</span></article>
+              <article><strong>Employee Code</strong><span>{viewingUser.employeeCode ?? "--"}</span></article>
+              <article><strong>Country</strong><span>{viewingUser.country ?? "--"}</span></article>
+              <article><strong>Timezone</strong><span>{viewingUser.timezone}</span></article>
+              <article><strong>Last Login</strong><span>{viewingUser.lastLoginAt ? formatDate(viewingUser.lastLoginAt) : "Never"}</span></article>
+            </div>
+
+            <div className="request-list version-list">
+              {viewingUser.roles.map((role) => (
+                <div className="request-item" key={role.id}>
+                  <div>
+                    <strong>{role.name}</strong>
+                    <span>{role.code}</span>
+                  </div>
+                </div>
+              ))}
+              {viewingUser.roles.length === 0 ? <p className="empty-state">No roles assigned.</p> : null}
+            </div>
+
+            {canWriteUsers ? (
+              <div className="modal-actions">
+                <button className="secondary-button" type="button" onClick={() => { setViewingUser(null); openEditUser(viewingUser); }}>
+                  Edit
+                </button>
+                <button
+                  className="secondary-button danger"
+                  type="button"
+                  disabled={viewingUser.status === "DEACTIVATED" || viewingUser.id === user?.id}
+                  onClick={() => void handleDeleteUser(viewingUser)}
+                >
+                  Delete
+                </button>
+              </div>
+            ) : null}
           </section>
         </div>
       ) : null}

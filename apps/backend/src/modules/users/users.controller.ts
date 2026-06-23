@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { UserStatus } from "@prisma/client";
 import { AuthenticatedUser, AuthGuard } from "../auth/auth.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
@@ -85,5 +85,11 @@ export class UsersController {
       status: body.status,
       actor
     });
+  }
+
+  @Delete(":id")
+  @RequirePermissions("user.deactivate")
+  delete(@Param("id") id: string, @CurrentUser() actor: AuthenticatedUser) {
+    return this.users.delete(id, actor);
   }
 }
