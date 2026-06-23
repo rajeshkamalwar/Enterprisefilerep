@@ -15,6 +15,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
 COPY apps/backend/package.json ./apps/backend/package.json
 COPY prisma.config.ts ./prisma.config.ts
