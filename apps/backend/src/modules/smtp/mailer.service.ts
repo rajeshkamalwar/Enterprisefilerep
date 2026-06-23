@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import nodemailer from "nodemailer";
+import * as nodemailer from "nodemailer";
 import { PrismaService } from "../database/prisma.service";
 
 type TemplateVariables = Record<string, string | number | boolean | null | undefined>;

@@ -43,7 +43,7 @@ export class ClamavService {
         }
 
         settled = true;
-        const normalized = response.trim();
+        const normalized = this.normalizeResponse(response);
 
         if (normalized.includes("FOUND")) {
           const signature = normalized.split(":").at(-1)?.replace("FOUND", "").trim();
@@ -91,8 +91,12 @@ export class ClamavService {
       socket.on("data", (chunk: Buffer) => {
         response += chunk.toString("utf8");
       });
-      socket.once("close", () => resolve(response.trim()));
+      socket.once("close", () => resolve(this.normalizeResponse(response)));
       socket.connect(this.port, this.host, () => socket.end(command));
     });
+  }
+
+  private normalizeResponse(response: string) {
+    return response.replaceAll("\0", "").trim();
   }
 }

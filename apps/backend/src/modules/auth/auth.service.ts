@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import bcrypt from "bcryptjs";
+import * as bcrypt from "bcryptjs";
 import { PrismaService } from "../database/prisma.service";
 
 type LoginInput = {
