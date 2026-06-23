@@ -4062,6 +4062,13 @@ h1 {
   font-size: 12px;
 }
 
+.request-item small {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.35;
+  max-width: 460px;
+}
+
 .review-item {
   align-items: flex-start;
 }
@@ -4071,6 +4078,10 @@ h1 {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.decision-actions .row-text-button {
+  white-space: nowrap;
 }
 
 .user-grid {
