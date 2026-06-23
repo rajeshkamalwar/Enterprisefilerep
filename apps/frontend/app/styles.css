@@ -852,6 +852,128 @@ h1 {
   margin-top: 3px;
 }
 
+.smtp-layout {
+  align-items: start;
+}
+
+.smtp-layout .smtp-log-panel {
+  grid-column: 1 / -1;
+}
+
+.toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.toggle-row label {
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fbfcfd;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  flex-direction: row;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.toggle-row input {
+  width: 16px;
+  height: 16px;
+}
+
+.smtp-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.smtp-status-grid article {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 12px;
+}
+
+.smtp-status-grid strong,
+.smtp-status-grid span {
+  display: block;
+}
+
+.smtp-status-grid span {
+  color: var(--muted);
+  margin-top: 5px;
+  font-size: 13px;
+}
+
+.smtp-test-form {
+  display: grid;
+  gap: 12px;
+}
+
+.smtp-test-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.smtp-test-form input {
+  height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fbfcfd;
+  color: var(--text);
+  padding: 0 10px;
+}
+
+.smtp-log-list {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.smtp-log-item {
+  min-height: 58px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.smtp-log-item:first-child {
+  border-top: 0;
+}
+
+.smtp-log-item div {
+  min-width: 0;
+}
+
+.smtp-log-item strong,
+.smtp-log-item span {
+  overflow-wrap: anywhere;
+}
+
+.smtp-log-item strong {
+  display: block;
+  font-size: 13px;
+}
+
+.smtp-log-item div > span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
 .request-list {
   display: flex;
   flex-direction: column;
@@ -1184,15 +1306,24 @@ h1 {
 
   .table-head,
   .user-head,
-  .department-head {
+  .department-head,
+  .audit-head {
     display: none;
   }
 
   .user-row,
   .department-row,
+  .audit-row,
   .folder-grid,
   .form-grid,
-  .role-checks {
+  .role-checks,
+  .module-filter-bar,
+  .smtp-status-grid {
     grid-template-columns: 1fr;
+  }
+
+  .smtp-log-item {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

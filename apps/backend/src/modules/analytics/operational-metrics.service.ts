@@ -48,7 +48,7 @@ export class OperationalMetricsService {
       this.emailQueue.getCounts()
     ]);
 
-    const smtp = this.mailer.getConfigurationStatus();
+    const smtp = await this.mailer.getConfigurationStatus();
     const failedJobs = scanQueue.failed + emailQueue.failed;
 
     return {

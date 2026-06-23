@@ -47,6 +47,8 @@ enum AuditAction {
   FILE_DELETED
   FILE_SCAN_COMPLETED
   FILE_SCAN_FAILED
+  SMTP_SETTINGS_UPDATED
+  SMTP_TEST_QUEUED
 }
 
 enum FileClassification {
@@ -398,4 +400,24 @@ model EmailDeliveryLog {
   @@index([status])
   @@index([createdAt])
   @@map("email_delivery_logs")
+}
+
+model SmtpSetting {
+  id             String   @id
+  host           String?
+  port           Int      @default(587)
+  username       String?
+  passwordCipher String?  @map("password_cipher")
+  secure         Boolean  @default(false)
+  requireTls     Boolean  @default(true) @map("require_tls")
+  fromEmail      String?  @map("from_email")
+  fromName       String   @default("Enterprise File Repository") @map("from_name")
+  replyTo        String?  @map("reply_to")
+  lastTestStatus String   @default("not_run") @map("last_test_status")
+  lastTestedAt   DateTime? @map("last_tested_at")
+  updatedById    String?  @map("updated_by_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("smtp_settings")
 }

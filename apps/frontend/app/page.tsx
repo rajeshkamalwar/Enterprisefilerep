@@ -177,6 +177,9 @@ type AppData = {
     total: number;
     pageCount: number;
   };
+  smtpSettings: SmtpSettings | null;
+  smtpQueue: EmailQueueCounts | null;
+  smtpDeliveryLogs: EmailDeliveryLog[];
 };
 
 type UploadResult = RepositoryFile & {
@@ -279,6 +282,44 @@ type AuditFilters = {
   q: string;
   action: string;
   success: string;
+};
+
+type SmtpSettings = {
+  configured: boolean;
+  source: string;
+  host: string | null;
+  port: number;
+  username: string | null;
+  usernameConfigured: boolean;
+  passwordConfigured: boolean;
+  secure: boolean;
+  requireTls: boolean;
+  fromEmail: string | null;
+  fromName: string;
+  replyTo: string | null;
+  lastTestStatus: string;
+  lastTestedAt: string | null;
+};
+
+type EmailQueueCounts = {
+  waiting?: number;
+  active?: number;
+  completed?: number;
+  failed?: number;
+  delayed?: number;
+  paused?: number;
+};
+
+type EmailDeliveryLog = {
+  id: string;
+  templateKey: string;
+  recipientEmail: string;
+  subject: string;
+  status: string;
+  failureReason: string | null;
+  retryCount: number;
+  sentAt: string | null;
+  createdAt: string;
 };
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
@@ -499,6 +540,19 @@ export default function Home() {
   const [departmentSaving, setDepartmentSaving] = useState(false);
   const [departmentMessage, setDepartmentMessage] = useState<string | null>(null);
   const [departmentStatusUpdatingId, setDepartmentStatusUpdatingId] = useState<string | null>(null);
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState("587");
+  const [smtpUsername, setSmtpUsername] = useState("");
+  const [smtpPassword, setSmtpPassword] = useState("");
+  const [smtpSecure, setSmtpSecure] = useState(false);
+  const [smtpRequireTls, setSmtpRequireTls] = useState(true);
+  const [smtpFromEmail, setSmtpFromEmail] = useState("");
+  const [smtpFromName, setSmtpFromName] = useState("Enterprise File Repository");
+  const [smtpReplyTo, setSmtpReplyTo] = useState("");
+  const [smtpTestTo, setSmtpTestTo] = useState("");
+  const [smtpSaving, setSmtpSaving] = useState(false);
+  const [smtpTesting, setSmtpTesting] = useState(false);
+  const [smtpMessage, setSmtpMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -516,6 +570,22 @@ export default function Home() {
       void loadDashboard(token);
     }
   }, [token]);
+
+  useEffect(() => {
+    if (!data?.smtpSettings) {
+      return;
+    }
+
+    setSmtpHost(data.smtpSettings.host ?? "");
+    setSmtpPort(String(data.smtpSettings.port ?? 587));
+    setSmtpUsername(data.smtpSettings.username ?? "");
+    setSmtpPassword("");
+    setSmtpSecure(data.smtpSettings.secure);
+    setSmtpRequireTls(data.smtpSettings.requireTls);
+    setSmtpFromEmail(data.smtpSettings.fromEmail ?? "");
+    setSmtpFromName(data.smtpSettings.fromName ?? "Enterprise File Repository");
+    setSmtpReplyTo(data.smtpSettings.replyTo ?? "");
+  }, [data?.smtpSettings]);
 
   const kpis = useMemo(() => {
     if (!data) {
@@ -577,7 +647,10 @@ export default function Home() {
         managedUsers,
         userOptions,
         departments,
-        auditLogs
+        auditLogs,
+        smtpSettings,
+        smtpQueue,
+        smtpDeliveryLogs
       ] = await Promise.all([
         dashboardRequest,
         apiRequest<HealthResponse>("/health"),
@@ -592,7 +665,12 @@ export default function Home() {
         canManageDepartments ? apiRequest<{ data: ManagedDepartment[] }>("/departments?pageSize=8", activeToken) : Promise.resolve({ data: [] }),
         canApproveAccess
           ? apiRequest<AuditLogResponse>(auditPath(filters), activeToken)
-          : Promise.resolve({ data: [], meta: { page: 1, pageSize: 20, total: 0, pageCount: 1 } })
+          : Promise.resolve({ data: [], meta: { page: 1, pageSize: 20, total: 0, pageCount: 1 } }),
+        canWriteUsers ? apiRequest<SmtpSettings>("/settings/smtp", activeToken) : Promise.resolve(null),
+        canWriteUsers ? apiRequest<EmailQueueCounts>("/settings/smtp/queue", activeToken) : Promise.resolve(null),
+        canWriteUsers
+          ? apiRequest<{ data: EmailDeliveryLog[] }>("/settings/smtp/delivery-logs", activeToken)
+          : Promise.resolve({ data: [] })
       ]);
 
       const selectedFolderId = folderId ?? roots.data[0]?.id ?? null;
@@ -614,7 +692,10 @@ export default function Home() {
         userOptions,
         departments: departments.data,
         auditLogs: auditLogs.data,
-        auditMeta: auditLogs.meta
+        auditMeta: auditLogs.meta,
+        smtpSettings,
+        smtpQueue,
+        smtpDeliveryLogs: smtpDeliveryLogs.data
       });
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) {
@@ -692,6 +773,69 @@ export default function Home() {
 
     if (token) {
       void loadDashboard(token, searchQuery, activeFolderId, filters);
+    }
+  }
+
+  async function handleSaveSmtp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!token) {
+      setError("Please sign in before updating SMTP settings.");
+      return;
+    }
+
+    setSmtpSaving(true);
+    setSmtpMessage(null);
+    setError(null);
+
+    try {
+      await apiRequest<SmtpSettings>("/settings/smtp", token, {
+        method: "PATCH",
+        body: JSON.stringify({
+          host: smtpHost,
+          port: Number(smtpPort),
+          username: smtpUsername,
+          ...(smtpPassword ? { password: smtpPassword } : {}),
+          secure: smtpSecure,
+          requireTls: smtpRequireTls,
+          fromEmail: smtpFromEmail,
+          fromName: smtpFromName,
+          replyTo: smtpReplyTo
+        })
+      });
+      setSmtpPassword("");
+      setSmtpMessage("SMTP settings saved.");
+      await loadDashboard(token, searchQuery, activeFolderId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to save SMTP settings");
+    } finally {
+      setSmtpSaving(false);
+    }
+  }
+
+  async function handleSmtpTest(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!token) {
+      setError("Please sign in before sending a test email.");
+      return;
+    }
+
+    setSmtpTesting(true);
+    setSmtpMessage(null);
+    setError(null);
+
+    try {
+      const result = await apiRequest<{ deliveryLogId: string; jobId: string | number | null }>("/settings/smtp/test", token, {
+        method: "POST",
+        body: JSON.stringify({ to: smtpTestTo })
+      });
+      setSmtpMessage(`SMTP test queued. Delivery log: ${result.deliveryLogId}`);
+      await loadDashboard(token, searchQuery, activeFolderId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to queue SMTP test email");
+    } finally {
+      setSmtpTesting(false);
     }
   }
 
@@ -1286,6 +1430,7 @@ export default function Home() {
           {accessMessage ? <p className="loading-banner">{accessMessage}</p> : null}
           {userMessage ? <p className="loading-banner">{userMessage}</p> : null}
           {departmentMessage ? <p className="loading-banner">{departmentMessage}</p> : null}
+          {smtpMessage ? <p className="loading-banner">{smtpMessage}</p> : null}
           {loading && !data ? <p className="loading-banner">Loading live repository data...</p> : null}
 
           {!moduleAccess[activeModule] ? (
@@ -1780,16 +1925,137 @@ export default function Home() {
             </section>
           ) : null}
 
-          {["reports", "smtp", "settings"].includes(activeModule) && moduleAccess[activeModule] ? (
+          {activeModule === "smtp" && moduleAccess.smtp ? (
+            <section className="two-column smtp-layout">
+              <article className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>SMTP Configuration</h2>
+                    <p>{data?.smtpSettings?.configured ? "Production credentials configured" : "Production credentials pending"}</p>
+                  </div>
+                  <span className={`status ${data?.smtpSettings?.configured ? "approved" : "pending"}`}>
+                    {data?.smtpSettings?.configured ? "Configured" : "Not Configured"}
+                  </span>
+                </div>
+
+                <form className="upload-form" onSubmit={handleSaveSmtp}>
+                  <div className="form-grid">
+                    <label>
+                      <span>SMTP Host</span>
+                      <input value={smtpHost} onChange={(event) => setSmtpHost(event.target.value)} placeholder="smtp.company.com" />
+                    </label>
+                    <label>
+                      <span>SMTP Port</span>
+                      <input value={smtpPort} onChange={(event) => setSmtpPort(event.target.value)} inputMode="numeric" />
+                    </label>
+                    <label>
+                      <span>Username</span>
+                      <input value={smtpUsername} onChange={(event) => setSmtpUsername(event.target.value)} autoComplete="username" />
+                    </label>
+                    <label>
+                      <span>Password</span>
+                      <input
+                        value={smtpPassword}
+                        onChange={(event) => setSmtpPassword(event.target.value)}
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder={data?.smtpSettings?.passwordConfigured ? "Configured; leave blank to keep" : "App password"}
+                      />
+                    </label>
+                    <label>
+                      <span>From Email</span>
+                      <input value={smtpFromEmail} onChange={(event) => setSmtpFromEmail(event.target.value)} type="email" />
+                    </label>
+                    <label>
+                      <span>From Name</span>
+                      <input value={smtpFromName} onChange={(event) => setSmtpFromName(event.target.value)} />
+                    </label>
+                    <label>
+                      <span>Reply To</span>
+                      <input value={smtpReplyTo} onChange={(event) => setSmtpReplyTo(event.target.value)} type="email" />
+                    </label>
+                  </div>
+
+                  <div className="toggle-row">
+                    <label>
+                      <input type="checkbox" checked={smtpSecure} onChange={(event) => setSmtpSecure(event.target.checked)} />
+                      <span>Use SSL/TLS</span>
+                    </label>
+                    <label>
+                      <input type="checkbox" checked={smtpRequireTls} onChange={(event) => setSmtpRequireTls(event.target.checked)} />
+                      <span>Require STARTTLS</span>
+                    </label>
+                  </div>
+
+                  <div className="modal-actions">
+                    <button className="primary-button" type="submit" disabled={smtpSaving}>
+                      <Mail aria-hidden="true" size={17} />
+                      {smtpSaving ? "Saving" : "Save SMTP"}
+                    </button>
+                  </div>
+                </form>
+              </article>
+
+              <aside className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>SMTP Operations</h2>
+                    <p>{data?.smtpSettings?.source ?? "environment"} configuration source</p>
+                  </div>
+                </div>
+
+                <div className="smtp-status-grid">
+                  <article><strong>Password</strong><span>{data?.smtpSettings?.passwordConfigured ? "Configured" : "Missing"}</span></article>
+                  <article><strong>Last Test</strong><span>{titleCase(data?.smtpSettings?.lastTestStatus ?? "not_run")}</span></article>
+                  <article><strong>Queue Failed</strong><span>{formatNumber(data?.smtpQueue?.failed ?? 0)}</span></article>
+                  <article><strong>Queue Waiting</strong><span>{formatNumber(data?.smtpQueue?.waiting ?? 0)}</span></article>
+                </div>
+
+                <form className="smtp-test-form" onSubmit={handleSmtpTest}>
+                  <label>
+                    <span>Test Recipient</span>
+                    <input value={smtpTestTo} onChange={(event) => setSmtpTestTo(event.target.value)} type="email" placeholder="it-admin@company.com" />
+                  </label>
+                  <button className="secondary-button" type="submit" disabled={smtpTesting || !smtpTestTo.trim()}>
+                    <Mail aria-hidden="true" size={17} />
+                    {smtpTesting ? "Queueing" : "Send Test"}
+                  </button>
+                </form>
+              </aside>
+
+              <article className="panel smtp-log-panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>Delivery Logs</h2>
+                    <p>{data?.smtpDeliveryLogs.length ?? 0} latest email events</p>
+                  </div>
+                </div>
+                <div className="smtp-log-list">
+                  {(data?.smtpDeliveryLogs ?? []).map((log) => (
+                    <div className="smtp-log-item" key={log.id}>
+                      <div>
+                        <strong>{log.subject}</strong>
+                        <span>{log.recipientEmail} · {formatDate(log.createdAt)}</span>
+                      </div>
+                      <span className={`status ${log.status.toLowerCase()}`}>{titleCase(log.status)}</span>
+                    </div>
+                  ))}
+                  {data && data.smtpDeliveryLogs.length === 0 ? <p className="empty-state">No email deliveries recorded.</p> : null}
+                </div>
+              </article>
+            </section>
+          ) : null}
+
+          {["reports", "settings"].includes(activeModule) && moduleAccess[activeModule] ? (
             <section className="panel module-workbench">
               <div className="panel-header">
                 <div>
                   <h2>{activeModuleConfig.name}</h2>
-                  <p>{activeModule === "smtp" ? `SMTP status: ${data?.dashboard.smtpStatus ?? "loading"}` : "Enterprise controls are reserved for the next implementation slice."}</p>
+                  <p>Enterprise controls are reserved for the next implementation slice.</p>
                 </div>
               </div>
               <div className="module-status-grid">
-                <article><strong>API Foundation</strong><span>{activeModule === "smtp" ? "Enabled" : "Planned"}</span></article>
+                <article><strong>API Foundation</strong><span>Planned</span></article>
                 <article><strong>RBAC Scope</strong><span>Enabled</span></article>
                 <article><strong>Admin UI</strong><span>Queued</span></article>
               </div>

@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Patch, Post, UseGuards } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Patch, Post, UseGuards } from "@nestjs/common";
 import { AuthGuard } from "../auth/auth.guard";
+import { CurrentUser } from "../auth/current-user.decorator";
+import { AuthenticatedUser } from "../auth/auth.guard";
 import { EmailQueueService } from "../queue/email-queue.service";
 import { RequirePermissions } from "../rbac/permissions.decorator";
 import { PermissionsGuard } from "../rbac/permissions.guard";
-import { MailerService } from "./mailer.service";
+import { MailerService, SmtpSettingsInput } from "./mailer.service";
 
 @UseGuards(AuthGuard, PermissionsGuard)
 @Controller("settings/smtp")
@@ -16,38 +18,33 @@ export class SmtpController {
   @Get()
   @RequirePermissions("smtp.read")
   getSettings() {
-    return {
-      host: process.env.SMTP_HOST ?? null,
-      port: process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : null,
-      username: process.env.SMTP_USER ?? null,
-      passwordConfigured: Boolean(process.env.SMTP_PASSWORD),
-      fromEmail: process.env.SMTP_FROM_EMAIL ?? null,
-      fromName: process.env.SMTP_FROM_NAME ?? "Enterprise File Repository",
-      lastTestStatus: "not_run"
-    };
+    return this.mailer.getConfigurationStatus();
   }
 
   @Patch()
   @RequirePermissions("smtp.update")
-  updateSettings(@Body() body: Record<string, unknown>) {
-    return {
-      updated: true,
-      storedFields: Object.keys(body).filter((key) => key !== "password"),
-      passwordUpdated: typeof body.password === "string"
-    };
+  updateSettings(@Body() body: SmtpSettingsInput, @CurrentUser() user: AuthenticatedUser) {
+    return this.mailer.updateSettings(body, user.id);
   }
 
   @Post("test")
   @RequirePermissions("smtp.update")
-  testEmail(@Body() body: { to: string }) {
-    return this.emailQueue.enqueue({
-      to: body.to,
+  async testEmail(@Body() body: { to: string }, @CurrentUser() user: AuthenticatedUser) {
+    if (!body.to?.trim()) {
+      throw new BadRequestException("Test recipient email is required");
+    }
+
+    const result = await this.emailQueue.enqueue({
+      to: body.to.trim(),
       templateKey: "smtp.test",
       variables: {
         appName: "Enterprise File Repository",
         timestamp: new Date().toISOString()
       }
     });
+    await this.mailer.markTestQueued(user.id, body.to.trim(), result.deliveryLogId);
+
+    return result;
   }
 
   @Get("delivery-logs")
