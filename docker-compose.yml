@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: filerepo-postgres
+    environment:
+      POSTGRES_DB: filerepo
+      POSTGRES_USER: filerepo
+      POSTGRES_PASSWORD: filerepo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U filerepo -d filerepo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: filerepo-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.10
+    container_name: filerepo-meilisearch
+    environment:
+      MEILI_MASTER_KEY: change-me-meili-key
+    ports:
+      - "7700:7700"
+    volumes:
+      - meili-data:/meili_data
+
+  clamav:
+    image: clamav/clamav:stable
+    container_name: filerepo-clamav
+    ports:
+      - "3310:3310"
+    volumes:
+      - clamav-data:/var/lib/clamav
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    container_name: filerepo-backend
+    env_file:
+      - .env
+    ports:
+      - "4000:4000"
+    depends_on:
+      - postgres
+      - redis
+      - meilisearch
+      - clamav
+    volumes:
+      - ./storage:/app/storage
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    container_name: filerepo-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres-data:
+  meili-data:
+  clamav-data:
