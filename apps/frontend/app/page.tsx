@@ -1051,7 +1051,7 @@ export default function Home() {
       return;
     }
 
-    const folderId = data?.folder?.folder.id ?? activeFolderId ?? data?.roots[0]?.id;
+    const folderId = data?.folder?.folder.id ?? activeFolderId ?? data?.roots?.[0]?.id;
 
     if (!folderId) {
       setError("No destination folder is available.");
@@ -1386,7 +1386,7 @@ export default function Home() {
   function openCreateFolder() {
     setEditingFolder(null);
     setFolderName("");
-    setFolderDepartmentId(data?.folder?.folder.departmentId ?? data?.userOptions.departments[0]?.id ?? "");
+    setFolderDepartmentId(data?.folder?.folder.departmentId ?? data?.userOptions.departments?.[0]?.id ?? "");
     setFolderMessage(null);
     setFolderModalOpen(true);
   }
@@ -1513,14 +1513,14 @@ export default function Home() {
   }
 
   function openCreateUser() {
-    const defaultRole = data?.userOptions.roles.find((role) => role.code === "EMPLOYEE") ?? data?.userOptions.roles[0];
+    const defaultRole = data?.userOptions.roles?.find((role) => role.code === "EMPLOYEE") ?? data?.userOptions.roles?.[0];
     setEditingUser(null);
     setUserFullName("");
     setUserEmail("");
     setUserPassword("");
     setUserEmployeeCode("");
     setUserCountry("India");
-    setUserDepartmentId(data?.userOptions.departments[0]?.id ?? "");
+    setUserDepartmentId(data?.userOptions.departments?.[0]?.id ?? "");
     setUserStatus("ACTIVE");
     setUserRoleIds(defaultRole ? [defaultRole.id] : []);
     setUserMessage(null);
@@ -1974,9 +1974,9 @@ export default function Home() {
               </form>
 
               <div className="toolbar">
-                <button type="button">{data?.roots.length ?? 0} root folders</button>
-                <button type="button">{data?.folder?.children.length ?? 0} child folders</button>
-                <button type="button">{data?.files.length ?? 0} {searchQuery.trim() ? "matching" : "folder"} files</button>
+                <button type="button">{data?.roots?.length ?? 0} root folders</button>
+                <button type="button">{data?.folder?.children?.length ?? 0} child folders</button>
+                <button type="button">{data?.files?.length ?? 0} {searchQuery.trim() ? "matching" : "folder"} files</button>
                 <button type="button">{data?.dashboard.smtpStatus ?? "smtp"} SMTP</button>
               </div>
 
@@ -2087,7 +2087,7 @@ export default function Home() {
                 <div className="panel-header">
                   <div>
                     <h2>Deleted Files</h2>
-                    <p>{data?.deletedFiles.length ?? 0} files in recycle bin</p>
+                    <p>{data?.deletedFiles?.length ?? 0} files in recycle bin</p>
                   </div>
                 </div>
                 <div className="request-list">
@@ -2111,7 +2111,7 @@ export default function Home() {
                 <div className="panel-header">
                   <div>
                     <h2>Deleted Folders</h2>
-                    <p>{data?.deletedFolders.length ?? 0} folders in recycle bin</p>
+                    <p>{data?.deletedFolders?.length ?? 0} folders in recycle bin</p>
                   </div>
                 </div>
                 <div className="request-list">
@@ -2177,7 +2177,7 @@ export default function Home() {
               <div className="panel-header">
                 <div>
                   <h2>My Access Requests</h2>
-                  <p>{data?.myAccessRequests.length ?? 0} recent requests</p>
+                  <p>{data?.myAccessRequests?.length ?? 0} recent requests</p>
                 </div>
                 <button className="text-button" type="button" onClick={() => setAccessModalOpen(true)}>New</button>
               </div>
@@ -2199,7 +2199,7 @@ export default function Home() {
               <div className="panel-header">
                 <div>
                   <h2>Approval Queue</h2>
-                  <p>{canApproveAccess ? `${data?.approvalRequests.length ?? 0} pending decisions` : "Reviewer access required"}</p>
+                  <p>{canApproveAccess ? `${data?.approvalRequests?.length ?? 0} pending decisions` : "Reviewer access required"}</p>
                 </div>
               </div>
               <div className="request-list">
@@ -2244,7 +2244,7 @@ export default function Home() {
               <div className="panel-header">
                 <div>
                   <h2>Department Management</h2>
-                  <p>{data?.departments.length ?? 0} departments with quota and usage</p>
+                  <p>{data?.departments?.length ?? 0} departments with quota and usage</p>
                 </div>
                 <button className="primary-button" type="button" onClick={openCreateDepartment}>
                   <Building2 aria-hidden="true" size={17} />
@@ -2305,7 +2305,7 @@ export default function Home() {
               <div className="panel-header">
                 <div>
                   <h2>User Management</h2>
-                  <p>{data?.managedUsers.length ?? 0} recently managed users</p>
+                  <p>{data?.managedUsers?.length ?? 0} recently managed users</p>
                 </div>
                 {canWriteUsers ? (
                   <button className="primary-button" type="button" onClick={openCreateUser}>
@@ -2391,7 +2391,7 @@ export default function Home() {
               <div className="panel-header">
                 <div>
                   <h2>Roles & RBAC</h2>
-                  <p>{data?.roles.length ?? 0} roles and {data?.permissions.length ?? 0} permissions</p>
+                  <p>{data?.roles?.length ?? 0} roles and {data?.permissions?.length ?? 0} permissions</p>
                 </div>
               </div>
 
@@ -2652,7 +2652,7 @@ export default function Home() {
                 <div className="panel-header">
                   <div>
                     <h2>Delivery Logs</h2>
-                    <p>{data?.smtpDeliveryLogs.length ?? 0} latest email events</p>
+                    <p>{data?.smtpDeliveryLogs?.length ?? 0} latest email events</p>
                   </div>
                 </div>
                 <div className="smtp-log-list">
@@ -2676,7 +2676,7 @@ export default function Home() {
               <div className="panel-header">
                 <div>
                   <h2>Reports</h2>
-                  <p>{data?.reportCards.length ?? 0} management reports available</p>
+                  <p>{data?.reportCards?.length ?? 0} management reports available</p>
                 </div>
               </div>
               <div className="module-status-grid">
@@ -2731,7 +2731,7 @@ export default function Home() {
                 <div className="panel-header">
                   <div>
                     <h2>Notification Templates</h2>
-                    <p>{data?.emailTemplates.length ?? 0} transactional templates</p>
+                    <p>{data?.emailTemplates?.length ?? 0} transactional templates</p>
                   </div>
                 </div>
                 <div className="request-list">
@@ -2887,7 +2887,7 @@ export default function Home() {
             <div className="panel-header">
               <div>
                 <h2>Upload File</h2>
-                <p>{data?.folder?.folder.pathCache ?? data?.roots[0]?.name ?? "Company Repository"}</p>
+                <p>{data?.folder?.folder.pathCache ?? data?.roots?.[0]?.name ?? "Company Repository"}</p>
               </div>
               <button className="text-button" type="button" onClick={() => setUploadOpen(false)}>
                 Close
@@ -2968,7 +2968,7 @@ export default function Home() {
                 <input
                   value={accessResourceId}
                   onChange={(event) => setAccessResourceId(event.target.value)}
-                  placeholder={data?.roots[0]?.id ?? "Folder or file ID"}
+                  placeholder={data?.roots?.[0]?.id ?? "Folder or file ID"}
                 />
               </label>
 
