@@ -702,7 +702,7 @@ export default function Home() {
   const [searchScanStatus, setSearchScanStatus] = useState("");
   const [searchExtension, setSearchExtension] = useState("");
   const [repositorySort, setRepositorySort] = useState<RepositorySort>("updated-desc");
-  const [repositoryViewMode, setRepositoryViewMode] = useState<RepositoryViewMode>("grid");
+  const [repositoryViewMode, setRepositoryViewMode] = useState<RepositoryViewMode>("list");
   const [auditQuery, setAuditQuery] = useState("");
   const [auditAction, setAuditAction] = useState("");
   const [auditSuccess, setAuditSuccess] = useState("all");
@@ -2217,8 +2217,11 @@ export default function Home() {
                 <div className="repository-explorer-main">
                   <div className="repository-workbench">
                     <div className="repository-location">
-                      <span className="eyebrow">Current Location</span>
-                      <h2>{data?.folder?.folder.name ?? "Repository Root"}</h2>
+                      <button className="repository-back-link" type="button" onClick={() => activateModule("dashboard")}>
+                        <ArrowLeft aria-hidden="true" size={15} />
+                        Back to dashboard
+                      </button>
+                      <h2>My Documents</h2>
                       <div className="breadcrumb-list repository-breadcrumbs" aria-label="Folder breadcrumbs">
                         {(data?.folder?.breadcrumbs ?? []).map((crumb) => (
                           <button type="button" key={crumb.id} onClick={() => void handleOpenFolder(crumb.id)}>
@@ -2228,36 +2231,86 @@ export default function Home() {
                       </div>
                     </div>
                     <div className="repository-actions">
-                      <button
-                        className="secondary-button"
-                        type="button"
-                        disabled={!data?.folder?.folder.parentId}
-                        onClick={() => void handleOpenFolder(data?.folder?.folder.parentId ?? null)}
-                      >
-                        <ArrowLeft aria-hidden="true" size={16} />
-                        Up
-                      </button>
                       <button className="secondary-button" type="button" onClick={openCreateFolder}>
                         <FolderPlus aria-hidden="true" size={16} />
                         New Folder
                       </button>
-                      {data?.folder?.folder ? (
-                        <button className="secondary-button" type="button" onClick={() => openEditFolder(data.folder!.folder)}>
-                          <Pencil aria-hidden="true" size={16} />
-                          Rename
-                        </button>
-                      ) : null}
-                      {data?.folder?.folder ? (
-                        <button className="secondary-button danger" type="button" onClick={() => void handleDeleteFolder(data.folder!.folder)}>
-                          <XCircle aria-hidden="true" size={16} />
-                          Delete Folder
-                        </button>
-                      ) : null}
                       <button className="primary-button" type="button" onClick={() => setUploadOpen(true)}>
                         <Upload aria-hidden="true" size={16} />
-                        Upload File
+                        New
                       </button>
+                      <details className="repository-action-menu">
+                        <summary>
+                          Options
+                          <MoreHorizontal aria-hidden="true" size={16} />
+                        </summary>
+                        <div>
+                          <button
+                            type="button"
+                            disabled={!data?.folder?.folder.parentId}
+                            onClick={() => void handleOpenFolder(data?.folder?.folder.parentId ?? null)}
+                          >
+                            <ArrowLeft aria-hidden="true" size={15} />
+                            Up
+                          </button>
+                          {data?.folder?.folder ? (
+                            <button type="button" onClick={() => openEditFolder(data.folder!.folder)}>
+                              <Pencil aria-hidden="true" size={15} />
+                              Rename folder
+                            </button>
+                          ) : null}
+                          {data?.folder?.folder ? (
+                            <button className="danger" type="button" onClick={() => void handleDeleteFolder(data.folder!.folder)}>
+                              <XCircle aria-hidden="true" size={15} />
+                              Delete folder
+                            </button>
+                          ) : null}
+                        </div>
+                      </details>
                     </div>
+                  </div>
+
+                  <div className="repository-folder-strip" aria-label="Folders">
+                    {repositoryFolders.map((folder) => (
+                      <article className="repository-folder-tile" key={folder.id}>
+                        <button type="button" onClick={() => void handleOpenFolder(folder.id)}>
+                          <span className="repository-folder-icon"><FolderTree aria-hidden="true" size={24} /></span>
+                          <span>
+                            <strong>{folder.name}</strong>
+                            <small>{folder.childFolderCount} folders · {folder.fileCount} files</small>
+                          </span>
+                        </button>
+                        <details
+                          className="repository-more-menu"
+                          open={repositoryMenuId === `folder:${folder.id}`}
+                          onToggle={(event) => {
+                            if (event.currentTarget.open) {
+                              setRepositoryMenuId(`folder:${folder.id}`);
+                            } else if (repositoryMenuId === `folder:${folder.id}`) {
+                              setRepositoryMenuId(null);
+                            }
+                          }}
+                        >
+                          <summary title={`More actions for ${folder.name}`}>
+                            <MoreHorizontal aria-hidden="true" size={17} />
+                          </summary>
+                          <div>
+                            <button type="button" onClick={() => { setRepositoryMenuId(null); void handleOpenFolder(folder.id); }}>
+                              <FolderTree aria-hidden="true" size={15} />
+                              Open
+                            </button>
+                            <button type="button" onClick={() => { setRepositoryMenuId(null); openEditFolder(folder); }}>
+                              <Pencil aria-hidden="true" size={15} />
+                              Rename
+                            </button>
+                            <button className="danger" type="button" onClick={() => { setRepositoryMenuId(null); void handleDeleteFolder(folder); }}>
+                              <XCircle aria-hidden="true" size={15} />
+                              Delete
+                            </button>
+                          </div>
+                        </details>
+                      </article>
+                    ))}
                   </div>
 
                   <form className="repository-simple-search" onSubmit={handleSearch}>
@@ -2350,49 +2403,6 @@ export default function Home() {
                   </div>
 
                   <div className="repository-simple-list" data-view-mode={repositoryViewMode} aria-label="Repository items">
-                    {repositoryFolders.map((folder) => (
-                      <article className="repository-simple-item" key={folder.id}>
-                        <button className="repository-simple-main" type="button" onClick={() => void handleOpenFolder(folder.id)}>
-                          <span className="repository-folder-icon"><FolderTree aria-hidden="true" size={22} /></span>
-                          <span>
-                            <strong>{folder.name}</strong>
-                            <small>Folder · {folder.childFolderCount} folders · {folder.fileCount} files</small>
-                          </span>
-                        </button>
-                        <span className="repository-simple-meta">Folder</span>
-                        <span className="repository-simple-meta">--</span>
-                        <details
-                          className="repository-more-menu"
-                          open={repositoryMenuId === `folder:${folder.id}`}
-                          onToggle={(event) => {
-                            if (event.currentTarget.open) {
-                              setRepositoryMenuId(`folder:${folder.id}`);
-                            } else if (repositoryMenuId === `folder:${folder.id}`) {
-                              setRepositoryMenuId(null);
-                            }
-                          }}
-                        >
-                          <summary title={`More actions for ${folder.name}`}>
-                            <MoreHorizontal aria-hidden="true" size={17} />
-                          </summary>
-                          <div>
-                            <button type="button" onClick={() => { setRepositoryMenuId(null); void handleOpenFolder(folder.id); }}>
-                              <FolderTree aria-hidden="true" size={15} />
-                              Open
-                            </button>
-                            <button type="button" onClick={() => { setRepositoryMenuId(null); openEditFolder(folder); }}>
-                              <Pencil aria-hidden="true" size={15} />
-                              Rename
-                            </button>
-                            <button className="danger" type="button" onClick={() => { setRepositoryMenuId(null); void handleDeleteFolder(folder); }}>
-                              <XCircle aria-hidden="true" size={15} />
-                              Delete
-                            </button>
-                          </div>
-                        </details>
-                      </article>
-                    ))}
-
                     {repositoryFiles.map((file) => (
                       <article className="repository-simple-item" key={file.id}>
                         <button className="repository-simple-main" type="button" onClick={() => void handleOpenFile(file)}>
@@ -2444,7 +2454,7 @@ export default function Home() {
                       </article>
                     ))}
 
-                    {data && repositoryFolders.length === 0 && repositoryFiles.length === 0 ? (
+                    {data && repositoryFiles.length === 0 ? (
                       <p className="empty-state">This folder is empty.</p>
                     ) : null}
                   </div>
