@@ -848,6 +848,14 @@ export default function Home() {
   }, [token]);
 
   useEffect(() => {
+    if (!token || !data) {
+      return;
+    }
+
+    void loadDashboard(token, searchQuery, activeFolderId, undefined, undefined, activeModule);
+  }, [activeModule]);
+
+  useEffect(() => {
     const syncModuleFromUrl = () => {
       const params = new URLSearchParams(window.location.search);
       const module = params.get("module");
@@ -974,7 +982,8 @@ export default function Home() {
       classification: searchClassification,
       scanStatus: searchScanStatus,
       extension: searchExtension
-    }
+    },
+    moduleContext: ModuleId = activeModule
   ) {
     if (isTokenExpired(activeToken)) {
       clearSession("Session expired. Please sign in again.");
@@ -999,13 +1008,25 @@ export default function Home() {
         fileParams.set("extension", repositoryFilters.extension.trim());
       }
 
-      const dashboardRequest = apiRequest<Dashboard>("/admin/dashboard", activeToken).catch((caught) => {
+      const shouldLoadDashboard = moduleContext === "dashboard";
+      const shouldLoadHealth = moduleContext === "dashboard" || moduleContext === "health";
+      const shouldLoadAccess = moduleContext === "dashboard" || moduleContext === "access";
+      const shouldLoadUsers = moduleContext === "users";
+      const shouldLoadDepartments = moduleContext === "departments" || moduleContext === "users";
+      const shouldLoadAudit = moduleContext === "audit";
+      const shouldLoadSmtp = moduleContext === "smtp";
+      const shouldLoadRoles = moduleContext === "roles";
+      const shouldLoadReports = moduleContext === "reports";
+      const shouldLoadRecycle = moduleContext === "recycle";
+      const shouldLoadSettings = moduleContext === "settings";
+
+      const dashboardRequest = shouldLoadDashboard ? apiRequest<Dashboard>("/admin/dashboard", activeToken).catch((caught) => {
         if (caught instanceof ApiError && caught.status === 403) {
           return emptyDashboard;
         }
 
         throw caught;
-      });
+      }) : Promise.resolve(data?.dashboard ?? emptyDashboard);
 
       const [
         dashboard,
@@ -1030,31 +1051,31 @@ export default function Home() {
         emailTemplates
       ] = await Promise.all([
         dashboardRequest,
-        apiRequest<HealthResponse>("/health"),
+        shouldLoadHealth ? apiRequest<HealthResponse>("/health") : Promise.resolve(data?.health ?? { status: "unknown", checks: [] }),
         apiRequest<{ data: FolderSummary[] }>("/folders", activeToken),
         apiRequest<{ data: RepositoryFile[] }>(`/files?${fileParams.toString()}`, activeToken),
-        apiRequest<{ data: AccessRequest[] }>("/access-requests/mine?pageSize=5", activeToken),
-        canApproveAccess
+        shouldLoadAccess ? apiRequest<{ data: AccessRequest[] }>("/access-requests/mine?pageSize=5", activeToken) : Promise.resolve({ data: data?.myAccessRequests ?? [] }),
+        canApproveAccess && shouldLoadAccess
           ? apiRequest<{ data: AccessRequest[] }>("/access-requests?status=PENDING&pageSize=5", activeToken)
-          : Promise.resolve({ data: [] }),
-        canReadUsers ? apiRequest<{ data: ManagedUser[] }>("/users?pageSize=6", activeToken) : Promise.resolve({ data: [] }),
-        canReadUsers ? apiRequest<UserOptions>("/users/options", activeToken) : Promise.resolve(emptyUserOptions),
-        canManageDepartments ? apiRequest<{ data: ManagedDepartment[] }>("/departments?pageSize=8", activeToken) : Promise.resolve({ data: [] }),
-        canApproveAccess
+          : Promise.resolve({ data: data?.approvalRequests ?? [] }),
+        canReadUsers && shouldLoadUsers ? apiRequest<{ data: ManagedUser[] }>("/users?pageSize=6", activeToken) : Promise.resolve({ data: data?.managedUsers ?? [] }),
+        canReadUsers && shouldLoadUsers ? apiRequest<UserOptions>("/users/options", activeToken) : Promise.resolve(data?.userOptions ?? emptyUserOptions),
+        canManageDepartments && shouldLoadDepartments ? apiRequest<{ data: ManagedDepartment[] }>("/departments?pageSize=8", activeToken) : Promise.resolve({ data: data?.departments ?? [] }),
+        canApproveAccess && shouldLoadAudit
           ? apiRequest<AuditLogResponse>(auditPath(filters), activeToken)
-          : Promise.resolve({ data: [], meta: { page: 1, pageSize: 20, total: 0, pageCount: 1 } }),
-        canWriteUsers ? apiRequest<SmtpSettings>("/settings/smtp", activeToken) : Promise.resolve(null),
-        canWriteUsers ? apiRequest<EmailQueueCounts>("/settings/smtp/queue", activeToken) : Promise.resolve(null),
-        canWriteUsers
+          : Promise.resolve({ data: data?.auditLogs ?? [], meta: data?.auditMeta ?? { page: 1, pageSize: 20, total: 0, pageCount: 1 } }),
+        canWriteUsers && shouldLoadSmtp ? apiRequest<SmtpSettings>("/settings/smtp", activeToken) : Promise.resolve(data?.smtpSettings ?? null),
+        canWriteUsers && shouldLoadSmtp ? apiRequest<EmailQueueCounts>("/settings/smtp/queue", activeToken) : Promise.resolve(data?.smtpQueue ?? null),
+        canWriteUsers && shouldLoadSmtp
           ? apiRequest<{ data: EmailDeliveryLog[] }>("/settings/smtp/delivery-logs", activeToken)
-          : Promise.resolve({ data: [] }),
-        canWriteUsers ? apiRequest<{ data: RoleSummary[] }>("/roles", activeToken) : Promise.resolve({ data: [] }),
-        canWriteUsers ? apiRequest<{ data: PermissionSummary[] }>("/permissions", activeToken) : Promise.resolve({ data: [] }),
-        canApproveAccess ? loadReportCards(activeToken) : Promise.resolve([]),
-        canWriteUsers ? apiRequest<{ data: RepositoryFile[] }>("/files/recycle-bin", activeToken) : Promise.resolve({ data: [] }),
-        canWriteUsers ? apiRequest<{ data: FolderSummary[] }>("/folders/recycle-bin", activeToken) : Promise.resolve({ data: [] }),
-        canWriteUsers ? apiRequest<SystemSettings>("/settings/system", activeToken) : Promise.resolve(null),
-        canWriteUsers ? apiRequest<{ data: EmailTemplate[] }>("/settings/email-templates", activeToken) : Promise.resolve({ data: [] })
+          : Promise.resolve({ data: data?.smtpDeliveryLogs ?? [] }),
+        canWriteUsers && shouldLoadRoles ? apiRequest<{ data: RoleSummary[] }>("/roles", activeToken) : Promise.resolve({ data: data?.roles ?? [] }),
+        canWriteUsers && shouldLoadRoles ? apiRequest<{ data: PermissionSummary[] }>("/permissions", activeToken) : Promise.resolve({ data: data?.permissions ?? [] }),
+        canApproveAccess && shouldLoadReports ? loadReportCards(activeToken) : Promise.resolve(data?.reportCards ?? []),
+        canWriteUsers && shouldLoadRecycle ? apiRequest<{ data: RepositoryFile[] }>("/files/recycle-bin", activeToken) : Promise.resolve({ data: data?.deletedFiles ?? [] }),
+        canWriteUsers && shouldLoadRecycle ? apiRequest<{ data: FolderSummary[] }>("/folders/recycle-bin", activeToken) : Promise.resolve({ data: data?.deletedFolders ?? [] }),
+        canWriteUsers && shouldLoadSettings ? apiRequest<SystemSettings>("/settings/system", activeToken) : Promise.resolve(data?.systemSettings ?? null),
+        canWriteUsers && shouldLoadSettings ? apiRequest<{ data: EmailTemplate[] }>("/settings/email-templates", activeToken) : Promise.resolve({ data: data?.emailTemplates ?? [] })
       ]);
 
       const selectedFolderId = folderId ?? roots.data[0]?.id ?? null;
@@ -1148,7 +1169,7 @@ export default function Home() {
     activateModule("repository");
 
     if (token) {
-      void loadDashboard(token, query, activeFolderId, undefined, repositoryFilters);
+      void loadDashboard(token, query, activeFolderId, undefined, repositoryFilters, "repository");
     }
   }
 
@@ -1161,7 +1182,7 @@ export default function Home() {
     setSearchExtension("");
 
     if (token) {
-      void loadDashboard(token, "", activeFolderId, undefined, emptyRepositoryFilters);
+      void loadDashboard(token, "", activeFolderId, undefined, emptyRepositoryFilters, "repository");
     }
   }
 
@@ -1180,7 +1201,7 @@ export default function Home() {
     activateModule("audit");
 
     if (token) {
-      void loadDashboard(token, searchQuery, activeFolderId, filters);
+      void loadDashboard(token, searchQuery, activeFolderId, filters, undefined, "audit");
     }
   }
 
@@ -1513,8 +1534,13 @@ export default function Home() {
       return;
     }
 
-    await apiRequest(`/files/${fileId}/restore`, token, { method: "PATCH" });
-    await loadDashboard(token, searchQuery, activeFolderId);
+    try {
+      await apiRequest(`/files/${fileId}/restore`, token, { method: "PATCH" });
+      setFolderMessage("File restored.");
+      await loadDashboard(token, searchQuery, activeFolderId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to restore file");
+    }
   }
 
   async function handlePermanentDeleteFile(fileId: string) {
@@ -1522,8 +1548,13 @@ export default function Home() {
       return;
     }
 
-    await apiRequest(`/files/${fileId}/permanent`, token, { method: "DELETE" });
-    await loadDashboard(token, searchQuery, activeFolderId);
+    try {
+      await apiRequest(`/files/${fileId}/permanent`, token, { method: "DELETE" });
+      setFolderMessage("File permanently deleted.");
+      await loadDashboard(token, searchQuery, activeFolderId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to permanently delete file");
+    }
   }
 
   async function handleRestoreRecycleFolder(folderId: string) {
@@ -1531,8 +1562,13 @@ export default function Home() {
       return;
     }
 
-    await apiRequest(`/folders/${folderId}/restore`, token, { method: "PATCH" });
-    await loadDashboard(token, searchQuery, activeFolderId);
+    try {
+      await apiRequest(`/folders/${folderId}/restore`, token, { method: "PATCH" });
+      setFolderMessage("Folder restored.");
+      await loadDashboard(token, searchQuery, activeFolderId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to restore folder");
+    }
   }
 
   async function handlePermanentDeleteFolder(folderId: string) {
@@ -1540,8 +1576,13 @@ export default function Home() {
       return;
     }
 
-    await apiRequest(`/folders/${folderId}/permanent`, token, { method: "DELETE" });
-    await loadDashboard(token, searchQuery, activeFolderId);
+    try {
+      await apiRequest(`/folders/${folderId}/permanent`, token, { method: "DELETE" });
+      setFolderMessage("Folder permanently deleted.");
+      await loadDashboard(token, searchQuery, activeFolderId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to permanently delete folder");
+    }
   }
 
   async function handleAssignRolePermission(event: FormEvent<HTMLFormElement>) {
