@@ -2306,10 +2306,6 @@ export default function Home() {
                         Back to dashboard
                       </button>
                       <h2>Company Repository</h2>
-                      <div className="repository-location-meta">
-                        <span>Scope:</span>
-                        <strong>{currentFolderDepartmentName}</strong>
-                      </div>
                       <div className="breadcrumb-list repository-breadcrumbs" aria-label="Folder breadcrumbs">
                         {(data?.folder?.breadcrumbs ?? []).map((crumb) => (
                           <button type="button" key={crumb.id} onClick={() => void handleOpenFolder(crumb.id)}>

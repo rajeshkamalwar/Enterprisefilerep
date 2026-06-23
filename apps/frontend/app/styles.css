@@ -2436,27 +2436,6 @@ body {
   line-height: 1.2;
 }
 
-.repository-module .repository-location-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px;
-  margin: -1px 0 8px;
-}
-
-.repository-module .repository-location-meta span {
-  color: var(--lqd-muted);
-  font-size: 10px;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.repository-module .repository-location-meta strong {
-  color: #334155;
-  font-size: 12px;
-  font-weight: 800;
-}
-
 .repository-module .department-chip {
   display: inline-flex;
   align-items: center;
