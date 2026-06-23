@@ -607,13 +607,19 @@ function auditPath(filters: AuditFilters) {
 }
 
 async function apiRequest<T>(path: string, token?: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers);
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  if (init.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const response = await fetch(`${apiBase}${path}`, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...init.headers
-    }
+    headers
   });
 
   if (!response.ok) {
