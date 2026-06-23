@@ -1,7 +1,7 @@
-import { BadRequestException, Controller, Get, Param, Post, Req, Res, UseGuards } from "@nestjs/common";
+import { BadRequestException, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
 import type { MultipartFile } from "@fastify/multipart";
 import type { FastifyReply } from "fastify";
-import { FileClassification } from "@prisma/client";
+import { FileClassification, ScanStatus } from "@prisma/client";
 import { AuthenticatedUser, AuthGuard, RequestWithUser } from "../auth/auth.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { RequirePermissions } from "../rbac/permissions.decorator";
@@ -16,6 +16,34 @@ type MultipartRequest = RequestWithUser & {
 @Controller("files")
 export class FilesController {
   constructor(private readonly repository: RepositoryService) {}
+
+  @Get()
+  @RequirePermissions("file.read")
+  listFiles(
+    @Query("q") q?: string,
+    @Query("folderId") folderId?: string,
+    @Query("classification") classification?: string,
+    @Query("scanStatus") scanStatus?: string,
+    @Query("extension") extension?: string,
+    @Query("page") page?: string,
+    @Query("pageSize") pageSize?: string
+  ) {
+    return this.repository.searchFiles({
+      q,
+      folderId,
+      classification: this.parseClassification(classification),
+      scanStatus: this.parseScanStatus(scanStatus),
+      extension,
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined
+    });
+  }
+
+  @Get("recent")
+  @RequirePermissions("file.read")
+  recentFiles(@Query("limit") limit?: string) {
+    return this.repository.listRecentFiles(limit ? Number(limit) : undefined);
+  }
 
   @Post("upload")
   @RequirePermissions("file.create")
@@ -80,5 +108,20 @@ export class FilesController {
     }
 
     return normalized as FileClassification;
+  }
+
+  private parseScanStatus(value?: string): ScanStatus | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const normalized = value.trim().toUpperCase().replaceAll(" ", "_").replaceAll("-", "_");
+    const allowed = new Set<string>(Object.values(ScanStatus));
+
+    if (!allowed.has(normalized)) {
+      throw new BadRequestException(`Unsupported scan status: ${value}`);
+    }
+
+    return normalized as ScanStatus;
   }
 }

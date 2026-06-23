@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { AuthenticatedUser, AuthGuard } from "../auth/auth.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { RequirePermissions } from "../rbac/permissions.decorator";
@@ -15,6 +15,14 @@ type CreateFolderBody = {
 @Controller("folders")
 export class FoldersController {
   constructor(private readonly repository: RepositoryService) {}
+
+  @Get()
+  @RequirePermissions("folder.read")
+  listFolders(@Query("parentId") parentId?: string) {
+    return this.repository.listFolders({
+      parentId: parentId?.trim() || null
+    });
+  }
 
   @Post()
   @RequirePermissions("folder.create")
