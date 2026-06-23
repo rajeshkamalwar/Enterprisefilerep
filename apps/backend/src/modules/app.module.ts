@@ -9,6 +9,7 @@ import { AuditLogsService } from "./audit/audit-logs.service";
 import { AuthController } from "./auth/auth.controller";
 import { AuthGuard } from "./auth/auth.guard";
 import { AuthService } from "./auth/auth.service";
+import { BackupService } from "./backup/backup.service";
 import { DatabaseModule } from "./database/database.module";
 import { DepartmentsController } from "./departments/departments.controller";
 import { DepartmentsService } from "./departments/departments.service";
@@ -29,6 +30,7 @@ import { ScanQueueService } from "./queue/scan-queue.service";
 import { EmailQueueService } from "./queue/email-queue.service";
 import { ClamavService } from "./scanning/clamav.service";
 import { ScanService } from "./scanning/scan.service";
+import { SearchIndexService } from "./search/search-index.service";
 import { MailerService } from "./smtp/mailer.service";
 import { LocalStorageService } from "./storage/local-storage.service";
 import { UsersService } from "./users/users.service";
@@ -62,6 +64,7 @@ import { UsersService } from "./users/users.service";
     AuditLogsService,
     AuthGuard,
     AuthService,
+    BackupService,
     ClamavService,
     DepartmentsService,
     EmailQueueService,
@@ -74,6 +77,7 @@ import { UsersService } from "./users/users.service";
     RepositoryService,
     ScanQueueService,
     ScanService,
+    SearchIndexService,
     UsersService
   ]
 })

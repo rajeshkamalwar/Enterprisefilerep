@@ -32,14 +32,19 @@ frontend -> backend -> PostgreSQL
 
 ## Current State
 
-The repository currently contains the foundation only. Endpoints that mention storage, upload, scan queues, token revocation, and email delivery are intentionally scaffolded. The next milestones should replace demo responses with real persistence and background jobs.
+The repository contains a runnable enterprise MVP with persisted users, departments, RBAC, repository folders/files, audit logs, reports, SMTP settings/templates/logs, queue workers, antivirus scan execution, local storage, backup metadata snapshots, and Meilisearch reindexing.
 
-## Recommended Next Milestones
+## Production Operations
 
-1. Run the first database migration and seed against Postgres.
-2. Add revocable refresh-token sessions.
-3. Run and verify BullMQ scan worker against Docker Redis and ClamAV.
-4. Run and verify SMTP email worker against a real SMTP provider.
-5. Audit log expansion for remaining admin events.
-6. Search indexing.
-7. Production hardening for Hostinger VPS.
+- Local development compose: [`../docker-compose.yml`](../docker-compose.yml)
+- Hostinger/VPS compose: [`../docker-compose.prod.yml`](../docker-compose.prod.yml)
+- Deployment runbook: [`./DEPLOYMENT.md`](./DEPLOYMENT.md)
+- Acceptance checklist: [`./ACCEPTANCE_CHECKLIST.md`](./ACCEPTANCE_CHECKLIST.md)
+
+## Remaining Enterprise Enhancements
+
+1. Add full-text content extraction for Office/PDF preview search.
+2. Add encrypted offsite backup automation through Restic/Borg plus rclone.
+3. Add refresh-token revocation and password reset flows.
+4. Add SSO/SAML or Microsoft Entra ID for larger enterprise rollout.
+5. Add observability stack if the client needs SLA-style monitoring.

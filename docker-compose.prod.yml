@@ -1,47 +1,38 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: filerepo-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: filerepo
-      POSTGRES_USER: filerepo
-      POSTGRES_PASSWORD: filerepo
-    ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
+      POSTGRES_DB: ${POSTGRES_DB:-filerepo}
+      POSTGRES_USER: ${POSTGRES_USER:-filerepo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U filerepo -d filerepo"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-filerepo} -d ${POSTGRES_DB:-filerepo}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: filerepo-redis
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
 
   meilisearch:
     image: getmeili/meilisearch:v1.10
-    container_name: filerepo-meilisearch
+    restart: unless-stopped
     environment:
-      MEILI_MASTER_KEY: change-me-meili-key
-    ports:
-      - "7700:7700"
+      MEILI_MASTER_KEY: ${MEILISEARCH_API_KEY:?MEILISEARCH_API_KEY is required}
+      MEILI_ENV: production
     volumes:
       - meili-data:/meili_data
 
   clamav:
     image: clamav/clamav:stable
-    container_name: filerepo-clamav
-    ports:
-      - "3310:3310"
+    restart: unless-stopped
     volumes:
       - clamav-data:/var/lib/clamav
 
@@ -49,12 +40,10 @@ services:
     build:
       context: .
       dockerfile: apps/backend/Dockerfile
-    container_name: filerepo-backend
+    restart: unless-stopped
     env_file:
-      - path: .env
-        required: false
-    ports:
-      - "4000:4000"
+      - path: ${APP_ENV_FILE:-.env.production}
+        required: true
     depends_on:
       - postgres
       - redis
@@ -62,18 +51,21 @@ services:
       - clamav
     volumes:
       - ./storage:/app/storage
+      - ./backups:/app/backups
+    ports:
+      - "127.0.0.1:4000:4000"
 
   scan-worker:
     build:
       context: .
       dockerfile: apps/backend/Dockerfile
-    container_name: filerepo-scan-worker
+    restart: unless-stopped
     command: ["npm", "run", "worker:scan-queue", "-w", "@filerepo/backend"]
     env_file:
-      - path: .env
-        required: false
+      - path: ${APP_ENV_FILE:-.env.production}
+        required: true
     depends_on:
-      - postgres
+      - backend
       - redis
       - clamav
     volumes:
@@ -83,29 +75,29 @@ services:
     build:
       context: .
       dockerfile: apps/backend/Dockerfile
-    container_name: filerepo-email-worker
+    restart: unless-stopped
     command: ["npm", "run", "worker:email-queue", "-w", "@filerepo/backend"]
     env_file:
-      - path: .env
-        required: false
+      - path: ${APP_ENV_FILE:-.env.production}
+        required: true
     depends_on:
-      - postgres
-      - redis
       - backend
+      - redis
 
   frontend:
     build:
       context: .
       dockerfile: apps/frontend/Dockerfile
-    container_name: filerepo-frontend
+    restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
-    ports:
-      - "3000:3000"
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:?PUBLIC_API_URL is required}
     depends_on:
       - backend
+    ports:
+      - "127.0.0.1:3000:3000"
 
 volumes:
   postgres-data:
+  redis-data:
   meili-data:
   clamav-data:

@@ -6,13 +6,16 @@ The source-of-truth BRD is [`FILE_REPOSITORY_BRD.md`](./FILE_REPOSITORY_BRD.md).
 
 ## Current Milestone
 
-This repository starts with the Enterprise MVP foundation:
+This repository now contains an Enterprise MVP implementation path:
 
-- Next.js frontend shell.
-- NestJS backend shell.
-- RBAC/auth/health API skeleton.
-- Docker Compose infrastructure for PostgreSQL, Redis, Meilisearch, ClamAV, and app services.
-- Environment variable template.
+- Next.js ERP-style frontend with sidebar modules and URL-persisted module state.
+- NestJS API with auth, RBAC, users, departments, folders, files, reports, audit, SMTP, health, backup, scan, and search administration endpoints.
+- Prisma/PostgreSQL persistence with seeded roles, permissions, admin user, folders, and email templates.
+- Redis/BullMQ workers for scan and email queues.
+- ClamAV integration for antivirus scanning.
+- Meilisearch integration with an explicit reindex worker.
+- Docker Compose infrastructure for local development and Hostinger VPS-style production deployment.
+- Nginx, PM2 fallback, production env template, smoke test, and acceptance checklist.
 
 ## Local Development
 
@@ -39,6 +42,18 @@ After the database milestone, backend protected routes require PostgreSQL, Prism
 
 ```bash
 docker compose up -d postgres redis meilisearch clamav
+```
+
+## Production Handoff
+
+- Production guide: [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)
+- Production env template: [`docs/env.production.example`](./docs/env.production.example)
+- Nginx reverse proxy: [`config/nginx/filerepo.conf`](./config/nginx/filerepo.conf)
+- Client UAT checklist: [`docs/ACCEPTANCE_CHECKLIST.md`](./docs/ACCEPTANCE_CHECKLIST.md)
+- Smoke test:
+
+```bash
+API_BASE=http://localhost:4000/api/v1 SMOKE_EMAIL=admin@company.com SMOKE_PASSWORD=Admin@12345 npm run smoke:test
 ```
 
 ## Product Principle

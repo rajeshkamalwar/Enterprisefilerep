@@ -10,7 +10,8 @@
     "dev": "npm run dev --workspaces",
     "build": "npm run build --workspaces",
     "lint": "npm run lint --workspaces",
-    "typecheck": "npm run typecheck --workspaces"
+    "typecheck": "npm run typecheck --workspaces",
+    "smoke:test": "node scripts/smoke-test.mjs"
   },
   "overrides": {
     "@hono/node-server": "^1.19.13",
