@@ -45,6 +45,43 @@ Set `SEED_ADMIN_PASSWORD` before seeding to override the default.
 
 Prisma 7 uses the PostgreSQL driver adapter. The runtime connection is configured in `src/modules/database/prisma.service.ts`.
 
+The seed also creates a root folder named `Company Repository`.
+
+## Repository Storage
+
+Version 1 stores uploads in local quarantine storage:
+
+```text
+LOCAL_STORAGE_ROOT=./storage
+MAX_UPLOAD_BYTES=262144000
+```
+
+Uploaded files are written with generated storage keys, while the original filename is stored only as metadata. Downloads are blocked until the current file version has scan status `CLEAN`.
+
+Create a folder:
+
+```bash
+curl -X POST "http://localhost:4000/api/v1/folders" \
+  -H "Authorization: Bearer ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Finance FY 2026",
+    "parentId": "ROOT_FOLDER_ID"
+  }'
+```
+
+Upload a file to quarantine:
+
+```bash
+curl -X POST "http://localhost:4000/api/v1/files/upload" \
+  -H "Authorization: Bearer ACCESS_TOKEN" \
+  -F "folderId=FOLDER_ID" \
+  -F "classification=INTERNAL" \
+  -F "file=@./sample.pdf"
+```
+
+The upload response returns metadata with `scanStatus=PENDING`. The ClamAV worker milestone will later move clean files from quarantine into available storage.
+
 ## Auth And RBAC
 
 Protected endpoints use:

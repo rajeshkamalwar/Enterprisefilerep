@@ -38,10 +38,9 @@ The repository currently contains the foundation only. Endpoints that mention st
 
 1. Run the first database migration and seed against Postgres.
 2. Add revocable refresh-token sessions.
-3. Local storage adapter and file metadata.
-4. Multipart upload plus quarantine flow.
-5. ClamAV worker and scan status transitions.
-6. Audit log expansion for file and admin events.
-7. SMTP queue and templates.
-8. Search indexing.
-9. Production hardening for Hostinger VPS.
+3. ClamAV worker and scan status transitions.
+4. Move clean files from quarantine to originals storage.
+5. Audit log expansion for file and admin events.
+6. SMTP queue and templates.
+7. Search indexing.
+8. Production hardening for Hostinger VPS.

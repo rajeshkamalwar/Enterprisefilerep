@@ -33,6 +33,8 @@ Backend:
 http://localhost:4000/api/v1/health
 ```
 
+After the database milestone, backend protected routes require PostgreSQL, Prisma migrations, seeded RBAC data, and a bearer token.
+
 ## Infrastructure
 
 ```bash

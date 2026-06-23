@@ -35,6 +35,32 @@ enum AuditAction {
   ROLE_CREATED
   PERMISSION_ASSIGNED
   ACCESS_DENIED
+  FOLDER_CREATED
+  FILE_UPLOADED
+  FILE_DOWNLOADED
+  FILE_DELETED
+}
+
+enum FileClassification {
+  PUBLIC_INTERNAL
+  INTERNAL
+  CONFIDENTIAL
+  RESTRICTED
+}
+
+enum ScanStatus {
+  PENDING
+  SCANNING
+  CLEAN
+  INFECTED
+  FAILED
+}
+
+enum PreviewStatus {
+  PENDING
+  READY
+  FAILED
+  NOT_SUPPORTED
 }
 
 model User {
@@ -56,6 +82,9 @@ model User {
   groupLinks   GroupMember[]
   sessions     UserSession[]
   auditLogs    AuditLog[]   @relation("AuditActor")
+  createdFolders Folder[]    @relation("FolderCreatedBy")
+  createdFiles   RepositoryFile[] @relation("FileCreatedBy")
+  uploadedVersions FileVersion[] @relation("VersionUploadedBy")
 
   @@map("users")
 }
@@ -71,6 +100,8 @@ model Department {
 
   users  User[]
   groups Group[]
+  folders Folder[]
+  files RepositoryFile[]
 
   @@map("departments")
 }
@@ -205,4 +236,88 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+model Folder {
+  id           String   @id @default(cuid())
+  parentId     String?  @map("parent_id")
+  name         String
+  pathCache    String?  @map("path_cache")
+  departmentId String?  @map("department_id")
+  createdById  String   @map("created_by")
+  updatedById  String?  @map("updated_by")
+  deletedById  String?  @map("deleted_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+  isDeleted    Boolean  @default(false) @map("is_deleted")
+
+  parent     Folder?  @relation("FolderTree", fields: [parentId], references: [id])
+  children   Folder[] @relation("FolderTree")
+  department Department? @relation(fields: [departmentId], references: [id])
+  createdBy  User @relation("FolderCreatedBy", fields: [createdById], references: [id])
+  files      RepositoryFile[]
+
+  @@unique([parentId, name])
+  @@index([parentId])
+  @@index([departmentId])
+  @@index([isDeleted])
+  @@map("folders")
+}
+
+model RepositoryFile {
+  id             String             @id @default(cuid())
+  folderId       String             @map("folder_id")
+  currentVersionId String?          @unique @map("current_version_id")
+  originalName   String             @map("original_name")
+  extension      String?
+  mimeType       String?            @map("mime_type")
+  classification FileClassification @default(INTERNAL)
+  description    String?
+  departmentId   String?            @map("department_id")
+  createdById    String             @map("created_by")
+  updatedById    String?            @map("updated_by")
+  deletedById    String?            @map("deleted_by")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+  deletedAt      DateTime?          @map("deleted_at")
+  isDeleted      Boolean            @default(false) @map("is_deleted")
+
+  folder         Folder       @relation(fields: [folderId], references: [id])
+  department     Department?  @relation(fields: [departmentId], references: [id])
+  createdBy      User         @relation("FileCreatedBy", fields: [createdById], references: [id])
+  currentVersion FileVersion? @relation("CurrentFileVersion", fields: [currentVersionId], references: [id])
+  versions       FileVersion[] @relation("FileVersions")
+
+  @@index([folderId])
+  @@index([departmentId])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@index([isDeleted])
+  @@index([classification])
+  @@map("files")
+}
+
+model FileVersion {
+  id            String        @id @default(cuid())
+  fileId        String        @map("file_id")
+  versionNumber Int           @map("version_number")
+  storageKey    String        @unique @map("storage_key")
+  storagePath   String        @map("storage_path")
+  sizeBytes     BigInt        @map("size_bytes")
+  checksumSha256 String       @map("checksum_sha256")
+  mimeType      String?       @map("mime_type")
+  scanStatus    ScanStatus    @default(PENDING) @map("scan_status")
+  previewStatus PreviewStatus @default(PENDING) @map("preview_status")
+  uploadedById  String        @map("uploaded_by")
+  uploadedAt    DateTime      @default(now()) @map("uploaded_at")
+
+  file          RepositoryFile @relation("FileVersions", fields: [fileId], references: [id], onDelete: Cascade)
+  currentForFile RepositoryFile? @relation("CurrentFileVersion")
+  uploadedBy    User @relation("VersionUploadedBy", fields: [uploadedById], references: [id])
+
+  @@unique([fileId, versionNumber])
+  @@index([fileId])
+  @@index([scanStatus])
+  @@map("file_versions")
 }

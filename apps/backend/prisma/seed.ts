@@ -101,6 +101,24 @@ async function main() {
     }
   });
 
+  const existingRoot = await prisma.folder.findFirst({
+    where: {
+      parentId: null,
+      name: "Company Repository"
+    }
+  });
+
+  if (!existingRoot) {
+    await prisma.folder.create({
+      data: {
+        name: "Company Repository",
+        pathCache: "Company Repository",
+        departmentId: department.id,
+        createdById: admin.id
+      }
+    });
+  }
+
   console.log("Seed complete");
   console.log("Admin email: admin@company.com");
   console.log("Admin password:", adminPassword);
