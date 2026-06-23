@@ -3317,6 +3317,24 @@ button:disabled {
   font-weight: 700;
 }
 
+.profile-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile-avatar {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--primary), #ff9b04);
+  color: #ffffff;
+  font-weight: 800;
+  box-shadow: 0 10px 24px rgba(242, 101, 34, 0.22);
+}
+
 .content {
   padding: 26px;
   display: flex;

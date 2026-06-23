@@ -817,6 +817,9 @@ export default function Home() {
   const [userMessage, setUserMessage] = useState<string | null>(null);
   const [userStatusUpdatingId, setUserStatusUpdatingId] = useState<string | null>(null);
   const [userDeletingId, setUserDeletingId] = useState<string | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profile, setProfile] = useState<ManagedUser | null>(null);
   const [departmentModalOpen, setDepartmentModalOpen] = useState(false);
   const [editingDepartment, setEditingDepartment] = useState<ManagedDepartment | null>(null);
   const [viewingDepartment, setViewingDepartment] = useState<ManagedDepartment | null>(null);
@@ -853,6 +856,8 @@ export default function Home() {
     setToken(null);
     setUser(null);
     setData(null);
+    setProfile(null);
+    setProfileOpen(false);
     setLoading(false);
     setAuthLoading(false);
 
@@ -1257,6 +1262,26 @@ export default function Home() {
 
     if (token) {
       void loadDashboard(token, query, activeFolderId, undefined, repositoryFilters, "repository");
+    }
+  }
+
+  async function openProfilePanel() {
+    if (!token) {
+      setError("Please sign in before opening your profile.");
+      return;
+    }
+
+    setProfileOpen(true);
+    setProfileLoading(true);
+    setError(null);
+
+    try {
+      const result = await apiRequest<ManagedUser>("/users/me", token);
+      setProfile(result);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to load profile");
+    } finally {
+      setProfileLoading(false);
     }
   }
 
@@ -2393,7 +2418,7 @@ export default function Home() {
             <button className="icon-button" type="button" title="Notifications">
               <Bell aria-hidden="true" size={18} />
             </button>
-            <button className="profile-button" type="button" title={user.email}>
+            <button className="profile-button" type="button" title={`${user.fullName} profile`} onClick={() => void openProfilePanel()}>
               {user.fullName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
             </button>
             <button className="icon-button" type="button" title="Logout" onClick={handleLogout}>
@@ -3684,6 +3709,54 @@ export default function Home() {
               ))}
               {selectedFile.versions?.length === 0 ? <p className="empty-state">No version history available.</p> : null}
             </div>
+          </section>
+        </div>
+      ) : null}
+
+      {profileOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal-panel wide-modal" aria-label="My profile">
+            <div className="panel-header">
+              <div className="profile-heading">
+                <span className="profile-avatar">
+                  {(profile?.fullName ?? user.fullName).split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase()}
+                </span>
+                <div>
+                  <h2>{profile?.fullName ?? user.fullName}</h2>
+                  <p>{profile?.email ?? user.email}</p>
+                </div>
+              </div>
+              <button className="text-button" type="button" onClick={() => setProfileOpen(false)}>
+                Close
+              </button>
+            </div>
+
+            {profileLoading ? <p className="loading-banner">Loading profile...</p> : null}
+
+            <div className="module-status-grid">
+              <article><strong>Status</strong><span>{titleCase(profile?.status ?? "active")}</span></article>
+              <article><strong>Department</strong><span>{profile?.department?.name ?? "Unassigned"}</span></article>
+              <article><strong>Employee Code</strong><span>{profile?.employeeCode ?? "--"}</span></article>
+              <article><strong>Country</strong><span>{profile?.country ?? "--"}</span></article>
+              <article><strong>Timezone</strong><span>{profile?.timezone ?? "--"}</span></article>
+              <article><strong>Last Login</strong><span>{profile?.lastLoginAt ? formatDate(profile.lastLoginAt) : "Current session"}</span></article>
+            </div>
+
+            <div className="request-list version-list">
+              {(profile?.roles ?? user.roles.map((role) => ({ id: role, code: role, name: titleCase(role) }))).map((role) => (
+                <div className="request-item" key={role.id}>
+                  <div>
+                    <strong>{role.name}</strong>
+                    <span>{role.code}</span>
+                  </div>
+                </div>
+              ))}
+              {(profile?.roles.length ?? user.roles.length) === 0 ? <p className="empty-state">No roles assigned.</p> : null}
+            </div>
+
+            <p className="upload-policy-note">
+              Profile editing for phone, designation, manager, avatar, and password change is not enabled yet. Those fields need a profile schema extension.
+            </p>
           </section>
         </div>
       ) : null}

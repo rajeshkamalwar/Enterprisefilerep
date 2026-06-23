@@ -114,6 +114,19 @@ export class UsersService {
     };
   }
 
+  async me(actor: AuthenticatedUser) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: actor.id },
+      include: this.userInclude()
+    });
+
+    if (!user) {
+      throw new NotFoundException("User profile not found");
+    }
+
+    return this.serializeUser(user);
+  }
+
   async create(input: CreateUserInput) {
     const email = input.email.trim().toLowerCase();
     const fullName = input.fullName.trim();

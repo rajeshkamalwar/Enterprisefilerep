@@ -59,6 +59,11 @@ export class UsersController {
     return this.users.options(actor);
   }
 
+  @Get("me")
+  me(@CurrentUser() actor: AuthenticatedUser) {
+    return this.users.me(actor);
+  }
+
   @Post()
   @RequirePermissions("user.create")
   create(@Body() body: CreateUserBody, @CurrentUser() actor: AuthenticatedUser) {
